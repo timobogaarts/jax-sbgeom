@@ -1,7 +1,10 @@
 import jax.numpy as jnp
 import h5py 
 import jax
+import numpy as onp
 from dataclasses import dataclass
+from jax_sbgeom.jax_utils.utils import stack_jacfwd
+from functools import partial
 
 def _create_mpol_vector(ntor : int, mpol : int):    
     return jnp.array([0 for i in range(ntor + 1)] + sum([[i for j in range(2 * ntor + 1)]for i in range(1, mpol )], []), dtype=int)
@@ -18,6 +21,8 @@ def _cylindrical_to_cartesian(RZphi : jnp.ndarray):
     y = R * jnp.sin(phi)
     return jnp.stack([x, y, Z], axis=-1)
 
+
+
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class FluxSurfaceSettings:
@@ -33,18 +38,45 @@ class FluxSurfaceData:
     Zmns : jnp.ndarray
     mpol_vector : jnp.ndarray
     ntor_vector : jnp.ndarray
+    dphi_x_dtheta : float
 
     @classmethod
     def from_rmnc_zmns_settings(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, settings : FluxSurfaceSettings):
         mpol_vector = _create_mpol_vector(settings.ntor, settings.mpol)
         ntor_vector = _create_ntor_vector(settings.ntor, settings.mpol, settings.nfp)
+
+        # This computes:
+        # dZ_dtheta on the lcfs at  theta, phi = 0:
+        # dZ_dtheta = jnp.sum(Zmns[-1,:] * mpol_vector * jnp.cos(mpol_vector * 0 - ntor_vector * 0)) = jnp.sum(Zmns[-1,:] * mpol_vector)        
+        sum_Zmns = jnp.sum(Zmns[-1,:] * mpol_vector)
+        
+        # Rmnc at theta, phi = 0
+        # R = jnp.sum(Rmnc[-1,:] * jnp.cos(mpol_vector * 0 - ntor_vector * 0)) = jnp.sum(Rmnc[-1,:])
+        # Rmnc at theta, phi = pi, 0:
+        # R = jnp.sum(Rmnc[-1,:] * jnp.cos(mpol_vector * jnp.pi - ntor_vector * 0)) = jnp.sum(Rmnc[-1,:] * (-1)**mpol_vector)
+        # We want to determine whether dZ_dtheta points in the positive or negative Z direction at the outboard midplane (R maximum)
+        # This is accomplished by checking the sign of dZ_dtheta at the outboard midplane.
+        # The outboard midplane is at theta = 0 if sum_Rmnc > 0 and at theta = pi if sum_Rmnc < 0
+        cond_outboard = jnp.sum(Rmnc[-1,:]) > jnp.sum(Rmnc[-1,:] * (-1)**mpol_vector)
+
+        # If cond_positive is true, then dZ_dtheta points in the positive Z direction at the outboard midplane.
+        # Thus, we want to use dphi_x_dtheta = 1.0
+        # If cond_positive is false, then dZ_dtheta points in the negative Z direction at the outboard midplane.
+        # Thus, we want to use dphi_x_dtheta = -1.0
+        
+        dphi_x_dtheta = jnp.where(
+            cond_outboard,
+            jnp.where(sum_Zmns > 0, 1.0, -1.0),   # cond_outboard == True branch
+            jnp.where(sum_Zmns > 0, -1.0, 1.0)    # cond_outboard == False branch
+        )        
+
         assert(Rmnc.shape == Zmns.shape)
         assert(Rmnc.shape[0] == settings.nsurf)
         assert(Rmnc.shape[1] == len(mpol_vector))
-        return cls(Rmnc=Rmnc, Zmns=Zmns, mpol_vector=mpol_vector, ntor_vector=ntor_vector)
+        return cls(Rmnc=Rmnc, Zmns=Zmns, mpol_vector=mpol_vector, ntor_vector=ntor_vector, dphi_x_dtheta=dphi_x_dtheta)
     
 
-
+@jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class FluxSurface:
     ''' 
@@ -103,100 +135,117 @@ class FluxSurface:
     
 
     def cylindrical_position(self, s, theta, phi):
-        return _cylindrical_position_interpolated_jit(self.data, self.settings, s, theta, phi)
+        return _cylindrical_position_interpolated_jit(self.data.Rmnc, self.data.Zmns, self.data.mpol_vector, self.data.ntor_vector, self.settings, s, theta, phi)
     
     def cartesian_position(self, s, theta, phi):
-        RZphi = self.cylindrical_position(s, theta, phi)
-        return _cylindrical_to_cartesian(RZphi)
-        
-
-def _cylindrical_position_single(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector  : jnp.ndarray,  settings  : FluxSurfaceSettings,  theta  : jnp.ndarray, phi : jnp.ndarray):
-    ''' 
-    Internal 
-
-    Function to compute cylindrical position from Fourier coefficients.
-
-    Rmnc and Zmns can be 1D arrays of Fourier coefficients, or they can be broadcasted arrays
-    with shape (..., nmodes), where ... represents the shape of theta and phi.
-    This ensures that both single-surfaces (where Rmnc and Zmns are 1D) and multiple surfaces
-    (where Rmnc and Zmns have shape (nsurf, nmodes)) can be handled within the same function.
+        return _cartesian_position_interpolated_jit(self.data.Rmnc, self.data.Zmns, self.data.mpol_vector, self.data.ntor_vector, self.settings, s, theta, phi)
     
-
-    Parameters:
-    -----------
-    Rmnc : (..., nmodes) jnp.ndarray
-        Radial Fourier coefficients for the R coordinate.
-    Zmns : (... , nmodes) jnp.ndarray
-        Vertical Fourier coefficients for the Z coordinate.
-    settings : FluxSurfaceSettings
-        Settings object containing parameters like mpol, ntor, nfp, and the mode vectors [static]
-        Currently unused.
-
-    theta : ( *phi.shape ) jnp.ndarray
-        Poloidal angles [radians].
-    phi : ( *phi.shape ) jnp.ndarray
-        Toroidal angles [radians].
-
-    Returns:
-    --------
-    (3, *phi.shape) jnp.ndarray
-        Cylindrical coordinates (R, Z, phi).
-    '''
-
-    def r_sum(i, val):        
-        return val + Rmnc[..., i] * jnp.cos(mpol_vector[i] * theta - ntor_vector[i] * phi)
+    def normal(self, s, theta, phi):
+        return _normal_interpolated_jit(self.data.Rmnc, self.data.Zmns, self.data.mpol_vector, self.data.ntor_vector, self.data.dphi_x_dtheta, self.settings, s, theta, phi)
     
-    def z_sum(i, val):
-        return val + Zmns[..., i] * jnp.sin(mpol_vector[i] * theta - ntor_vector[i] * phi)
-    
-    R_init = jnp.zeros(theta.shape)
-    Z_init = jnp.zeros(theta.shape)
-    
-    R = jax.lax.fori_loop(0, Rmnc.shape[-1], r_sum, R_init)
-    Z = jax.lax.fori_loop(0, Zmns.shape[-1], z_sum, Z_init)
-    return R, Z
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class ToroidalExtent:
+    start : float
+    end   : float
 
-def _interpolate_fractions(s, nsurf):
+    @classmethod
+    def half_module(self, flux_surface : FluxSurface, dphi = 0.0):
+        return self(dphi, 2 * jnp.pi / flux_surface.settings.nfp / 2.0 + dphi)
     
+    @classmethod
+    def full_module(self, flux_surface : FluxSurface, dphi = 0.0):
+        return self(dphi, 2 * jnp.pi / flux_surface.settings.nfp + dphi)
+    
+    @classmethod 
+    def full(self):
+        return self(0.0, 2 * jnp.pi)
+
+    def full_angle(self):
+        return jnp.allclose(self.end - self.start, 2 * jnp.pi)
+    
+    # def full_angle(self):
+    #     return onp.allclose(self.end - self.start, 2 * onp.pi)
+    
+# ===================================================================================================================================================================================
+#                                                                           Interpolation of arrays
+# ===================================================================================================================================================================================
+def _interpolate_fractions(s, nsurf):    
     s_start =  s * (nsurf-1)
     i0      = jnp.floor(s_start).astype(int)
     i1      = jnp.minimum(i0 + 1, nsurf - 1)    
     ds      = s_start - i0    
-    return i0, i1, ds 
+    return i0, i1, ds
 
+def _interpolate_array(x_interp, s):
+    nsurf = x_interp.shape[0]
+    i0, i1, ds   = _interpolate_fractions(s, nsurf)
+    x0 = x_interp[i0]
+    x1 = x_interp[i1]
+    return (1 - ds) * x0 + ds * x1
 
+# ===================================================================================================================================================================================
+#                                                                           Positions
+# ===================================================================================================================================================================================
 
-def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxSurfaceSettings, s : jnp.ndarray, theta  : jnp.ndarray, phi : jnp.ndarray):
-    s_1d     = jnp.atleast_1d(s) 
-    theta_1d = jnp.atleast_1d(theta) 
-    phi_1d   = jnp.atleast_1d(phi)
-
-    # Since it is possible that s is a scalar, we first interpolate just s
-    # Then, we index the Rmnc and Zmns arrays. So if s is a small array, 
-    # this saves significant memory compared to first broadcasting then indexing.
+def _cylindrical_position_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, settings  : FluxSurfaceSettings,  s,  theta, phi):
     
-    i0, i1, ds   = _interpolate_fractions(s_1d, settings.nsurf)
     
-    # shape is now (s_1d.shape, n_modes)
-    Rmnc_i0 = data.Rmnc[i0]
-    Zmns_i0 = data.Zmns[i0]
-
-    Rmnc_i1 = data.Rmnc[i1]
-    Zmns_i1 = data.Zmns[i1]
-
-    # Now we broadcast everything to the final shape
-    s_bc, theta_bc, phi_bc = jnp.broadcast_arrays(s_1d, theta_1d, phi_1d)
-    Rmnc_i0_bc = jnp.broadcast_to(Rmnc_i0, s_bc.shape + (Rmnc_i0.shape[-1],))
-    Zmns_i0_bc = jnp.broadcast_to(Zmns_i0, s_bc.shape + (Zmns_i0.shape[-1],))
-
-    Rmnc_i1_bc = jnp.broadcast_to(Rmnc_i1, s_bc.shape + (Rmnc_i1.shape[-1],))
-    Zmns_i1_bc = jnp.broadcast_to(Zmns_i1, s_bc.shape + (Zmns_i1.shape[-1],))
+    # This in essence computes:
+    # R   = jnp.sum(Rmnc_interp[..., None] * jnp.cos(mpol_vector[..., None] * theta[None, ...] - ntor_vector[..., None] * phi[None, ...]), axis=-1)
+    # However, although the above can be more efficient, it creates large intermediate arrays and is thus undesirable.
+    # Also, we call _interpolate_array once per mode and per point in this setup
+    # Instead, we could have vectorized this calculation over all points, but that would also create large intermediate arrays.
     
-    R_0, Z_0   = _cylindrical_position_single(Rmnc_i0_bc, Zmns_i0_bc, data.mpol_vector, data.ntor_vector, settings, theta_bc, phi_bc)
-    R_1, Z_1   = _cylindrical_position_single(Rmnc_i1_bc, Zmns_i1_bc, data.mpol_vector, data.ntor_vector, settings, theta_bc, phi_bc)   
-    R_final = (1 - ds) * R_0 + ds * R_1
-    Z_final = (1 - ds) * Z_0 + ds * Z_1
-    return jnp.stack([R_final, Z_final , phi_bc], axis=-1)
+    # Now, no n_modes x n_points arrays are created.
+
+    # This function is valid for both s,theta,phi all scalars and broadcastable arrays. 
+    def fourier_sum(vals, i):
+        R, Z = vals
+        R = R + _interpolate_array(Rmnc[..., i], s) * jnp.cos(mpol_vector[i] * theta - ntor_vector[i] * phi)
+        Z = Z + _interpolate_array(Zmns[..., i], s) * jnp.sin(mpol_vector[i] * theta - ntor_vector[i] * phi)
+        return (R,Z), None
     
+    # The fourier_sum function automatically broadcast arrays. However, we need to ensure that 
+    # we start the scan with a zero object that has the correct final shape. Thus,
+    # we create dummy arrays that have the correct shape.
+    # The phi_bc  is required to ensure the final array phi is stackable with R, Z.
+    s_bc, theta_bc, phi_bc = jnp.broadcast_arrays(s, theta, phi)
+    
+    n_modes = Rmnc.shape[1]
+    
+    R,Z = jax.lax.scan(fourier_sum, (jnp.zeros_like(theta_bc), jnp.zeros_like(theta_bc)), jnp.arange(n_modes))[0]
+    
+    return jnp.stack([R, Z, phi_bc],axis=-1)
+    
+
 _cylindrical_position_interpolated_jit = jax.jit(_cylindrical_position_interpolated)
 
+def _cartesian_position_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, settings : FluxSurfaceSettings, s, theta, phi):
+    RZphi = _cylindrical_position_interpolated(Rmnc, Zmns, mpol_vector, ntor_vector, settings, s, theta, phi)
+    return _cylindrical_to_cartesian(RZphi)
+
+_cartesian_position_interpolated_jit = jax.jit(_cartesian_position_interpolated)
+
+# ===================================================================================================================================================================================
+#                                                                           Normals
+# ===================================================================================================================================================================================
+
+
+# this function requires scalars to work since it needs to return a (3,2) array
+# vmapping works, but loses the flexibility of either of the inputs being arrays, scalars or multidimensional arrays
+# furthermore, the jacobians are stacked to ensure jnp.vectorize can be used (it does not support multiple outputs like given by jacfwd)
+_cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cartesian_position_interpolated, argnums=(6,7)), excluded=(0,1,2,3,4), signature='(),(),()->(3,2)'))
+
+
+def _normal_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, dphi_x_dtheta : float,  settings : FluxSurfaceSettings, s, theta, phi):
+    dX_dtheta_and_dX_dphi = _cartesian_position_interpolated_grad(Rmnc, Zmns, mpol_vector, ntor_vector, settings, s, theta, phi)
+    # We use dr/dphi x dr/dtheta 
+    # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
+    # This is accomplised by using the dphi_x_dtheta member. 
+    #
+    n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0]) * dphi_x_dtheta
+    n = n / jnp.linalg.norm(n, axis=-1, keepdims=True)
+    return n
+
+_normal_interpolated_jit = jax.jit(_normal_interpolated, static_argnums=(5))
