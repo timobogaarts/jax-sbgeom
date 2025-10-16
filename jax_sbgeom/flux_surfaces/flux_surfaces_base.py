@@ -22,6 +22,52 @@ def _cylindrical_to_cartesian(RZphi : jnp.ndarray):
     return jnp.stack([x, y, Z], axis=-1)
 
 
+def _check_whether_make_normals_point_outwards_required(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray):
+    # This computes:
+    # dZ_dtheta on the lcfs at  theta, phi = 0:
+    # dZ_dtheta = jnp.sum(Zmns[-1,:] * mpol_vector * jnp.cos(mpol_vector * 0 - ntor_vector * 0)) = jnp.sum(Zmns[-1,:] * mpol_vector)        
+    sum_Zmns = jnp.sum(Zmns[-1,:] * mpol_vector)
+    
+    # Rmnc at theta, phi = 0
+    # R = jnp.sum(Rmnc[-1,:] * jnp.cos(mpol_vector * 0 - ntor_vector * 0)) = jnp.sum(Rmnc[-1,:])
+    # Rmnc at theta, phi = pi, 0:
+    # R = jnp.sum(Rmnc[-1,:] * jnp.cos(mpol_vector * jnp.pi - ntor_vector * 0)) = jnp.sum(Rmnc[-1,:] * (-1)**mpol_vector)
+    # We want to determine whether dZ_dtheta points in the positive or negative Z direction at the outboard midplane.
+    # This is accomplished by checking the sign of dZ_dtheta at the outboard midplane.
+    # The outboard midplane is at theta = 0 if sum_Rmnc > 0 and at theta = pi if sum_Rmnc < 0
+    cond_outboard = jnp.sum(Rmnc[-1,:]) > jnp.sum(Rmnc[-1,:] * (-1)**mpol_vector)
+
+    
+    original_u = jnp.where(cond_outboard, 
+                       jnp.where(sum_Zmns > 0, True, False),   # cond_outboard == True branch
+                       jnp.where(sum_Zmns > 0, False, True)    # cond_outboard == False branch
+    )
+    return jnp.logical_not(original_u)
+
+def _reverse_theta_single(m_vec, n_vec, coeff_vec, cosine_sign : bool):
+    assert coeff_vec.ndim == 1
+    assert m_vec.shape == n_vec.shape == coeff_vec.shape
+    
+    keys = jnp.stack([m_vec, n_vec], axis=1)
+    
+    reversed_keys = jnp.stack([m_vec, -n_vec], axis=1)  # target keys
+    
+    reversed_keys_mod = jnp.where(keys[:,0:1] > 0, reversed_keys, keys)
+        
+    matches = jnp.all(keys[:, None, :] == reversed_keys_mod[None, :, :], axis=-1)
+
+    assert jnp.all(jnp.any(matches, axis=0))
+
+    idx_map = jnp.argmax(matches, axis=0)
+    
+    # Build new coefficient map
+    # For cosine, we just swap the numbers
+    # For sine, we swap and change sign, except for the m=0 terms. These stay the same
+    new_coeff_vec = jax.lax.cond(cosine_sign, lambda _ : coeff_vec[idx_map], lambda _ :  jnp.where(keys[:,0] > 0, -coeff_vec[idx_map], coeff_vec[idx_map]), operand=None)
+    
+    return new_coeff_vec
+
+reverse_theta_total  = jax.vmap(_reverse_theta_single, in_axes=(None, None, 0, None), out_axes=0)
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -37,46 +83,38 @@ class FluxSurfaceData:
     Rmnc : jnp.ndarray
     Zmns : jnp.ndarray
     mpol_vector : jnp.ndarray
-    ntor_vector : jnp.ndarray
-    dphi_x_dtheta : float
+    ntor_vector : jnp.ndarray    
 
     @classmethod
-    def from_rmnc_zmns_settings(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, settings : FluxSurfaceSettings):
+    def from_rmnc_zmns_settings(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, settings : FluxSurfaceSettings, make_normals_point_outwards : bool = True):
         mpol_vector = _create_mpol_vector(settings.ntor, settings.mpol)
         ntor_vector = _create_ntor_vector(settings.ntor, settings.mpol, settings.nfp)
 
-        # This computes:
-        # dZ_dtheta on the lcfs at  theta, phi = 0:
-        # dZ_dtheta = jnp.sum(Zmns[-1,:] * mpol_vector * jnp.cos(mpol_vector * 0 - ntor_vector * 0)) = jnp.sum(Zmns[-1,:] * mpol_vector)        
-        sum_Zmns = jnp.sum(Zmns[-1,:] * mpol_vector)
-        
-        # Rmnc at theta, phi = 0
-        # R = jnp.sum(Rmnc[-1,:] * jnp.cos(mpol_vector * 0 - ntor_vector * 0)) = jnp.sum(Rmnc[-1,:])
-        # Rmnc at theta, phi = pi, 0:
-        # R = jnp.sum(Rmnc[-1,:] * jnp.cos(mpol_vector * jnp.pi - ntor_vector * 0)) = jnp.sum(Rmnc[-1,:] * (-1)**mpol_vector)
-        # We want to determine whether dZ_dtheta points in the positive or negative Z direction at the outboard midplane (R maximum)
-        # This is accomplished by checking the sign of dZ_dtheta at the outboard midplane.
-        # The outboard midplane is at theta = 0 if sum_Rmnc > 0 and at theta = pi if sum_Rmnc < 0
-        cond_outboard = jnp.sum(Rmnc[-1,:]) > jnp.sum(Rmnc[-1,:] * (-1)**mpol_vector)
+        if make_normals_point_outwards:
+            flip_theta = _check_whether_make_normals_point_outwards_required(Rmnc, Zmns, mpol_vector)
+            Rmnc_mod = jnp.where(
+                flip_theta, 
+                reverse_theta_total(mpol_vector, ntor_vector, Rmnc, True),
+                Rmnc
 
-        # If cond_positive is true, then dZ_dtheta points in the positive Z direction at the outboard midplane.
-        # Thus, we want to use dphi_x_dtheta = 1.0
-        # If cond_positive is false, then dZ_dtheta points in the negative Z direction at the outboard midplane.
-        # Thus, we want to use dphi_x_dtheta = -1.0
-        
-        dphi_x_dtheta = jnp.where(
-            cond_outboard,
-            jnp.where(sum_Zmns > 0, 1.0, -1.0),   # cond_outboard == True branch
-            jnp.where(sum_Zmns > 0, -1.0, 1.0)    # cond_outboard == False branch
-        )        
+            )
+            
+            Zmns_mod = jnp.where(
+                flip_theta,
+                reverse_theta_total(mpol_vector, ntor_vector, Zmns, False),
+                Zmns
+            )        
+        else:
+            Rmnc_mod = Rmnc 
+            Zmns_mod = Zmns
 
         assert(Rmnc.shape == Zmns.shape)
         assert(Rmnc.shape[0] == settings.nsurf)
         assert(Rmnc.shape[1] == len(mpol_vector))
-        return cls(Rmnc=Rmnc, Zmns=Zmns, mpol_vector=mpol_vector, ntor_vector=ntor_vector, dphi_x_dtheta=dphi_x_dtheta)
+        return cls(Rmnc=Rmnc_mod, Zmns=Zmns_mod, mpol_vector=mpol_vector, ntor_vector=ntor_vector)
 
     def __iter__(self):
-        return iter((self.Rmnc, self.Zmns, self.mpol_vector, self.ntor_vector, self.dphi_x_dtheta))
+        return iter((self.Rmnc, self.Zmns, self.mpol_vector, self.ntor_vector))
     
 
 @jax.tree_util.register_dataclass
@@ -84,7 +122,6 @@ class FluxSurfaceData:
 class FluxSurface:
     ''' 
     Class representing a set of flux surfaces using a VMEC-like representation.
-
 
     Attributes:
     -----------
@@ -251,7 +288,7 @@ def _normal_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings
     # We use dr/dphi x dr/dtheta 
     # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
     # This is accomplised by using the dphi_x_dtheta member. 
-    n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0]) * data.dphi_x_dtheta
+    n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0])
     n = n / jnp.linalg.norm(n, axis=-1, keepdims=True)
     return n
 
@@ -275,7 +312,7 @@ def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxS
     F = jnp.einsum("...i, ...i->...", dX_dtheta_and_dX_dphi[..., 0], dX_dtheta_and_dX_dphi[..., 1])
     G = jnp.einsum("...i, ...i->...", dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 1])
     
-    normal_vector = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0]) * data.dphi_x_dtheta
+    normal_vector = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0])
     normal_vector = normal_vector / jnp.linalg.norm(normal_vector, axis=-1, keepdims=True)
 
     L = jnp.einsum("...i, ...i->...", normal_vector, d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2[..., 0, 0])

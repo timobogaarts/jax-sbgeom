@@ -5,6 +5,8 @@ import StellBlanket.SBGeom as SBGeom
 import jax
 import time
 
+from jax_sbgeom.flux_surfaces.flux_surfaces_base import _check_whether_make_normals_point_outwards_required
+
 jax.config.update("jax_enable_x64", True)
 
 def _get_flux_surfaces(vmec_file):
@@ -21,8 +23,10 @@ def _sampling_grid(fs_jax : jsb.flux_surfaces.FluxSurface, n_s : int = 50, n_the
     return jnp.meshgrid(ss, tt, pp, indexing='ij')
 
 
-def _1d_sampling_grid(fs_jax : jsb.flux_surfaces.FluxSurface, n_s : int = 50, n_theta : int = 55, n_phi : int = 45, include_axis = True):
+def _1d_sampling_grid(fs_jax : jsb.flux_surfaces.FluxSurface, n_s : int = 50, n_theta : int = 55, n_phi : int = 45, include_axis = True, reverse_theta : bool = False):
     ss, tt, pp = _sampling_grid(fs_jax, n_s, n_theta, n_phi, include_axis)
+    if reverse_theta:
+        tt = - onp.array(tt)
     return onp.array(ss).ravel(), onp.zeros(ss.shape).ravel(), onp.array(tt).ravel(), onp.array(pp).ravel()
 
 
@@ -62,7 +66,9 @@ def test_position(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", n_repetit
     fs_jax, fs_sbgeom = _get_flux_surfaces(vmec_file)
 
     pos_jax, time_jax, std_jax          = time_jsb_function(fs_jax.cartesian_position, *_sampling_grid(fs_jax),    n_repetitions= n_repetitions )
-    pos_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(fs_sbgeom.Return_Position, *_1d_sampling_grid(fs_jax), n_repetitions=n_repetitions, jsb=False)
+
+    reverse_theta = fs_sbgeom.du_x_dv_sign() == 1.0
+    pos_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(fs_sbgeom.Return_Position, *_1d_sampling_grid(fs_jax, reverse_theta=reverse_theta), n_repetitions=n_repetitions, jsb=False)
     
     assert jnp.allclose(pos_jax, pos_sbgeom.reshape(pos_jax.shape), atol=1e-13)
 
@@ -72,8 +78,10 @@ def test_position(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", n_repetit
 def test_normals(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", n_repetitions = 1):
     fs_jax, fs_sbgeom = _get_flux_surfaces(vmec_file)
 
+    reverse_theta = fs_sbgeom.du_x_dv_sign() == 1.0
+
     norm_jax, time_jax, std_jax          = time_jsb_function(fs_jax.normal, *_sampling_grid(fs_jax, include_axis=False),              n_repetitions= n_repetitions)
-    norm_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(fs_sbgeom.Return_Normal, *_1d_sampling_grid(fs_jax, include_axis=False), n_repetitions= n_repetitions, jsb=False)
+    norm_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(fs_sbgeom.Return_Normal, *_1d_sampling_grid(fs_jax, include_axis=False, reverse_theta=reverse_theta), n_repetitions= n_repetitions, jsb=False)
     
     assert jnp.allclose(norm_jax, norm_sbgeom.reshape(norm_jax.shape), atol=1e-13)
 
@@ -94,8 +102,10 @@ def test_principal_curvatures(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4
             k1[i] = p_curv[0]
             k2[i] = p_curv[1]
         return onp.stack([k1, k2], axis=-1)
+    
+    reverse_theta = fs_sbgeom.du_x_dv_sign() == 1.0
 
-    curv_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(return_all_principal_curvatures, *_1d_sampling_grid(fs_jax, include_axis=False), n_repetitions= n_repetitions, jsb=False)
+    curv_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(return_all_principal_curvatures, *_1d_sampling_grid(fs_jax, include_axis=False, reverse_theta=reverse_theta), n_repetitions= n_repetitions, jsb=False)
     
     assert jnp.allclose(curv_jax, curv_sbgeom.reshape(curv_jax.shape), atol=1e-13)
 
@@ -105,6 +115,14 @@ def test_principal_curvatures(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4
 # ===================================================================================================================================================================================
 #                                                                           Meshing
 # ===================================================================================================================================================================================
+def _flip_vertices_theta(positions, n_theta, n_phi):
+    positions_rs = positions.reshape(n_theta, n_phi, 3)
+
+    first = jnp.take(positions_rs, indices = 0, axis = 0)
+    rest = jnp.flip(jnp.take(positions_rs, indices = jnp.arange(1, n_theta), axis = 0), axis = 0)
+    positions_rs_flipped = jnp.concatenate([first[None, :, :], rest], axis = 0)
+    return positions_rs_flipped.reshape(-1, 3)
+
 
 def test_meshing_surface(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", n_repetitions = 1):
     fs_jax, fs_sbgeom = _get_flux_surfaces(vmec_file)
@@ -115,10 +133,17 @@ def test_meshing_surface(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", n_
     n_theta = 500 
     n_phi  = 60
 
+
     (pos_jax, tri_jax), time_jax, std_jax          = time_jsb_function_mult(jsb.flux_surfaces.flux_surface_meshing.mesh_surface, fs_jax, s, tor_extent,  n_theta, n_phi, True, n_repetitions=n_repetitions)
     mesh_sbgeom, time_sbgeom, std_sbgeom           = time_jsb_function(     fs_sbgeom.Mesh_Surface, s, 0.0, n_phi, n_theta, tor_extent.start, tor_extent.end,                  n_repetitions=n_repetitions, jsb=False)
 
-    assert jnp.allclose(pos_jax, mesh_sbgeom.vertices, atol=1e-13)
+    reverse_theta = fs_sbgeom.du_x_dv_sign() == 1.0
+    if reverse_theta:
+        pos_jax_mod = _flip_vertices_theta(pos_jax, n_theta, n_phi)
+    else:
+        pos_jax_mod = pos_jax
+
+    assert jnp.allclose(pos_jax_mod, mesh_sbgeom.vertices, atol=1e-13)
     assert jnp.allclose(tri_jax, mesh_sbgeom.connectivity, atol=1e-13)
 
     print_timings("mesh_surface", time_jax, std_jax, time_sbgeom, std_sbgeom)

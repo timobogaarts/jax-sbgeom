@@ -4,12 +4,12 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
-
+from typing import List
 # ===================================================================================================================================================================================
-#                                                                           Interpolation of arrays
+#                                                                           Triangle Meshing
 # ===================================================================================================================================================================================
 
-@partial(jax.jit, static_argnums = (0,1,2,3,4))
+@partial(jax.jit, static_argnums = (0,1,2,3))
 def build_triangles(n_theta : int, theta_blocks : int, n_phi : int, phi_blocks : int, normals_facing_outwards=True):
     '''
     Build triangle connectivity for a mesh on a toroidal surface with n_theta poloidal and n_phi toroidal points.
@@ -49,31 +49,28 @@ def build_triangles(n_theta : int, theta_blocks : int, n_phi : int, phi_blocks :
     # In the array each vertex is indexed as u * Nv + v
     uv_index = lambda u, v: u * n_phi + v
 
-    
-    if normals_facing_outwards:
-        tri1 = jnp.stack([
+    def outfacing_normals(x):
+        return jnp.stack([
             uv_index(bottom_left_u_i, bottom_left_v_i),
             uv_index(bottom_right_u_i, bottom_right_v_i),
             uv_index(top_left_u_i, top_left_v_i),
-        ], axis=-1)
-
-        tri2 = jnp.stack([
+        ], axis=-1), jnp.stack([
             uv_index(bottom_right_u_i, bottom_right_v_i),
             uv_index(top_right_u_i, top_right_v_i),
             uv_index(top_left_u_i, top_left_v_i),
         ], axis=-1)
-    else:
-        tri1 = jnp.stack([
+    def infacing_normals(x):
+        return jnp.stack([
             uv_index(bottom_right_u_i, bottom_right_v_i),
             uv_index(bottom_left_u_i, bottom_left_v_i),
             uv_index(top_left_u_i, top_left_v_i),
-        ], axis=-1)
-
-        tri2 = jnp.stack([
+        ], axis=-1), jnp.stack([
             uv_index(top_right_u_i, top_right_v_i),
             uv_index(bottom_right_u_i, bottom_right_v_i),
             uv_index(top_left_u_i, top_left_v_i),
         ], axis=-1)
+        
+    tri1 , tri2 = jax.lax.cond(normals_facing_outwards, outfacing_normals, infacing_normals, operand=None)
 
     # Combine and flatten
     triangles = jnp.concatenate([tri1, tri2], axis=-1)
@@ -81,8 +78,8 @@ def build_triangles(n_theta : int, theta_blocks : int, n_phi : int, phi_blocks :
 
     return triangles
 
-@partial(jax.jit, static_argnums = (4,5,6,7))
-def _mesh_surface(flux_surfaces : FluxSurface, s : float, phi_start : float, phi_end : bool, full_angle : bool,  n_theta : int, n_phi : int,normals_facing_outwards  : bool ):
+@partial(jax.jit, static_argnums = (4,5,6))
+def _mesh_surface(flux_surfaces : FluxSurface, s : float, phi_start : float, phi_end : bool, full_angle : bool,  n_theta : int, n_phi : int, normals_facing_outwards  : bool):
     '''
     Mesh a flux surface at normalized radius s with n_theta poloidal and n_phi toroidal points.
 
@@ -135,22 +132,78 @@ def _mesh_surface(flux_surfaces : FluxSurface, s : float, phi_start : float, phi
     
     t, p  = jnp.meshgrid(theta, phi, indexing='ij')
 
-    positions = flux_surfaces.cartesian_position(s,t,p).reshape(-1,3)
+    positions = flux_surfaces.cartesian_position(s,t,p).reshape(-1,3)        
     
     triangles = build_triangles(n_theta, theta_blocks, n_phi,  phi_blocks, normals_facing_outwards)
 
     return positions, triangles
 
+_mesh_multiple_surfaces = jax.jit(jax.vmap(_mesh_surface, in_axes=(None, 0, None, None, None, None, None, 0)), static_argnums=(4,5,6))
+
+
+def _concatenate_meshes(positions_list : List[jnp.ndarray], connectivity_list : List[jnp.ndarray]):
+    '''
+    Internal function to concatenate multiple meshes into a single mesh.
+
+    Parameters
+    ----------
+    positions_array : List[jnp.ndarray]
+        A list of arrays of shape (n_points, 3) containing the Cartesian coordinates of the mesh points for each surface.
+    connectivity_array : List[jnp.ndarray]
+        A list of arrays of shape (n_points_per_element, 3) containing the indices of the vertices for each triangle for each surface.        
+    '''
+    n_meshes          = len(positions_list)
+    n_points_per_mesh = [pos.shape[0] for pos in positions_list]
+    
+
+
+
+
+def _mesh_surfaces_closed(flux_surfaces: FluxSurface, s_values_start : float, s_value_end : float, phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+    
+    s_values_outer = jnp.array([s_values_start, s_value_end])
+    normals_facing_outwards = jnp.array([False, True])
+
+    multiple_surface_mesh =  _mesh_multiple_surfaces(flux_surfaces, s_values_outer, phi_start, phi_end, full_angle, n_theta, n_phi,  normals_facing_outwards)
+
+    return multiple_surface_mesh
+
+
 def mesh_surface(flux_surfaces: FluxSurface, s : float, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int, normals_facing_outwards : bool = True):
     """
     Create a mesh of points on a flux surface at normalized radius s, with n_theta poloidal and n_phi toroidal points.
+
+    This cannot be jitted because the toroidal extent determines whether it is closed, which determines the number of triangles. Therefore, the 
+    size of the arrays is unknown at compile time (which cannot be jitted unless toroidal_extent is static, but this is inconvenient because then the function would recompile for every different extent).
+
+    This is therefore a convenience function only. Internal functions should not build on this function.
+
+    Parameters
+    ----------
+    flux_surfaces : FluxSurface
+        The flux surface object containing the parameterization.
+    s : float
+        The normalized radius of the flux surface to mesh.
+    toroidal_extent : ToroidalExtent
+        The toroidal extent of the mesh. 
+    n_theta : int
+        The number of poloidal points.
+    n_phi : int
+        The number of toroidal points.
+    normals_facing_outwards : bool, optional
+        Whether the normals should face outwards. Default is True.    
+    Returns
+    -------
+    positions : jnp.ndarray
+        An array of shape (n_points, 3) containing the Cartesian coordinates of the mesh points.
+    triangles : jnp.ndarray
+        An array of shape (n_triangles, 3) containing the indices of the vertices for each triangle.
+
     """
 
     return _mesh_surface(flux_surfaces, s, *toroidal_extent, n_theta, n_phi,  normals_facing_outwards)
-    
 
 
-    
 
 
     
