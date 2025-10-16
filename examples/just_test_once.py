@@ -11,7 +11,7 @@ jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 jax.config.update("jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir")
-jax.config.update("jax_logging_level", "DEBUG")
+#jax.config.update("jax_logging_level", "DEBUG")
 
 import numpy as onp
 import sys 
@@ -52,6 +52,7 @@ for vmec_file in vmec_files:
     if test_meshing_surf:
         try:
             test_meshing_surface(vmec_file, n_repetitions=1)
+            test_meshing_surface(vmec_file, tor_extent='full', n_repetitions=1)
         except Exception as e:
             print(f"test_meshing_surface failed for {vmec_file} with error: {e}")
     if test_principal_curv:

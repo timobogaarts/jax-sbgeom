@@ -124,10 +124,15 @@ def _flip_vertices_theta(positions, n_theta, n_phi):
     return positions_rs_flipped.reshape(-1, 3)
 
 
-def test_meshing_surface(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", n_repetitions = 1):
+def test_meshing_surface(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", tor_extent : str = 'half_module', n_repetitions = 1):
     fs_jax, fs_sbgeom = _get_flux_surfaces(vmec_file)
 
-    tor_extent= jsb.flux_surfaces.flux_surfaces_base.ToroidalExtent.half_module(fs_jax)
+    if tor_extent == 'half_module':
+        tor_extent= jsb.flux_surfaces.flux_surfaces_base.ToroidalExtent.half_module(fs_jax)
+    elif tor_extent == 'full':
+        tor_extent= jsb.flux_surfaces.flux_surfaces_base.ToroidalExtent.full()
+    else:
+        raise ValueError(f"Unknown toroidal extent: {tor_extent}")
     s = 0.356622756
 
     n_theta = 500 
@@ -137,6 +142,9 @@ def test_meshing_surface(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", n_
     (pos_jax, tri_jax), time_jax, std_jax          = time_jsb_function_mult(jsb.flux_surfaces.flux_surface_meshing.mesh_surface, fs_jax, s, tor_extent,  n_theta, n_phi, True, n_repetitions=n_repetitions)
     mesh_sbgeom, time_sbgeom, std_sbgeom           = time_jsb_function(     fs_sbgeom.Mesh_Surface, s, 0.0, n_phi, n_theta, tor_extent.start, tor_extent.end,                  n_repetitions=n_repetitions, jsb=False)
 
+    # The sampling cannot be directly influenced. 
+    # Instead, we just reverse the theta direction by flipping all vertices if required 
+    # This also takes care of the fact that SBGeom does not have normals facing outwards: they get flipped as well so will be equal again.
     reverse_theta = fs_sbgeom.du_x_dv_sign() == 1.0
     if reverse_theta:
         pos_jax_mod = _flip_vertices_theta(pos_jax, n_theta, n_phi)
