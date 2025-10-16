@@ -74,6 +74,9 @@ class FluxSurfaceData:
         assert(Rmnc.shape[0] == settings.nsurf)
         assert(Rmnc.shape[1] == len(mpol_vector))
         return cls(Rmnc=Rmnc, Zmns=Zmns, mpol_vector=mpol_vector, ntor_vector=ntor_vector, dphi_x_dtheta=dphi_x_dtheta)
+
+    def __iter__(self):
+        return iter((self.Rmnc, self.Zmns, self.mpol_vector, self.ntor_vector, self.dphi_x_dtheta))
     
 
 @jax.tree_util.register_dataclass
@@ -135,13 +138,17 @@ class FluxSurface:
     
 
     def cylindrical_position(self, s, theta, phi):
-        return _cylindrical_position_interpolated_jit(self.data.Rmnc, self.data.Zmns, self.data.mpol_vector, self.data.ntor_vector, self.settings, s, theta, phi)
+        return _cylindrical_position_interpolated_jit(self.data, self.settings, s, theta, phi)
     
     def cartesian_position(self, s, theta, phi):
-        return _cartesian_position_interpolated_jit(self.data.Rmnc, self.data.Zmns, self.data.mpol_vector, self.data.ntor_vector, self.settings, s, theta, phi)
+        return _cartesian_position_interpolated_jit(self.data, self.settings, s, theta, phi)
     
     def normal(self, s, theta, phi):
-        return _normal_interpolated_jit(self.data.Rmnc, self.data.Zmns, self.data.mpol_vector, self.data.ntor_vector, self.data.dphi_x_dtheta, self.settings, s, theta, phi)
+        return _normal_interpolated_jit(self.data, self.settings, s, theta, phi)
+    
+    def principal_curvatures(self, s, theta, phi):
+        return _principal_curvatures_interpolated(self.data, self.settings, s, theta, phi)
+    
     
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -162,10 +169,11 @@ class ToroidalExtent:
         return self(0.0, 2 * jnp.pi)
 
     def full_angle(self):
-        return jnp.allclose(self.end - self.start, 2 * jnp.pi)
+        return bool(jnp.allclose(self.end - self.start, 2 * jnp.pi))
     
-    # def full_angle(self):
-    #     return onp.allclose(self.end - self.start, 2 * onp.pi)
+    def __iter__(self):
+        return iter((self.start, self.end, self.full_angle()))
+    
     
 # ===================================================================================================================================================================================
 #                                                                           Interpolation of arrays
@@ -188,7 +196,7 @@ def _interpolate_array(x_interp, s):
 #                                                                           Positions
 # ===================================================================================================================================================================================
 
-def _cylindrical_position_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, settings  : FluxSurfaceSettings,  s,  theta, phi):
+def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     
     
     # This in essence computes:
@@ -202,8 +210,8 @@ def _cylindrical_position_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, m
     # This function is valid for both s,theta,phi all scalars and broadcastable arrays. 
     def fourier_sum(vals, i):
         R, Z = vals
-        R = R + _interpolate_array(Rmnc[..., i], s) * jnp.cos(mpol_vector[i] * theta - ntor_vector[i] * phi)
-        Z = Z + _interpolate_array(Zmns[..., i], s) * jnp.sin(mpol_vector[i] * theta - ntor_vector[i] * phi)
+        R = R + _interpolate_array(data.Rmnc[..., i], s) * jnp.cos(data.mpol_vector[i] * theta - data.ntor_vector[i] * phi)
+        Z = Z + _interpolate_array(data.Zmns[..., i], s) * jnp.sin(data.mpol_vector[i] * theta - data.ntor_vector[i] * phi)
         return (R,Z), None
     
     # The fourier_sum function automatically broadcast arrays. However, we need to ensure that 
@@ -212,7 +220,7 @@ def _cylindrical_position_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, m
     # The phi_bc  is required to ensure the final array phi is stackable with R, Z.
     s_bc, theta_bc, phi_bc = jnp.broadcast_arrays(s, theta, phi)
     
-    n_modes = Rmnc.shape[1]
+    n_modes = data.Rmnc.shape[1]
     
     R,Z = jax.lax.scan(fourier_sum, (jnp.zeros_like(theta_bc), jnp.zeros_like(theta_bc)), jnp.arange(n_modes))[0]
     
@@ -221,8 +229,8 @@ def _cylindrical_position_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, m
 
 _cylindrical_position_interpolated_jit = jax.jit(_cylindrical_position_interpolated)
 
-def _cartesian_position_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, settings : FluxSurfaceSettings, s, theta, phi):
-    RZphi = _cylindrical_position_interpolated(Rmnc, Zmns, mpol_vector, ntor_vector, settings, s, theta, phi)
+def _cartesian_position_interpolated(data : FluxSurfaceData, settings : FluxSurfaceSettings, s, theta, phi):
+    RZphi = _cylindrical_position_interpolated(data, settings, s, theta, phi)
     return _cylindrical_to_cartesian(RZphi)
 
 _cartesian_position_interpolated_jit = jax.jit(_cartesian_position_interpolated)
@@ -235,17 +243,50 @@ _cartesian_position_interpolated_jit = jax.jit(_cartesian_position_interpolated)
 # this function requires scalars to work since it needs to return a (3,2) array
 # vmapping works, but loses the flexibility of either of the inputs being arrays, scalars or multidimensional arrays
 # furthermore, the jacobians are stacked to ensure jnp.vectorize can be used (it does not support multiple outputs like given by jacfwd)
-_cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cartesian_position_interpolated, argnums=(6,7)), excluded=(0,1,2,3,4), signature='(),(),()->(3,2)'))
+_cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cartesian_position_interpolated, argnums=(3,4)), excluded=(0,1), signature='(),(),()->(3,2)'))
 
 
-def _normal_interpolated(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, dphi_x_dtheta : float,  settings : FluxSurfaceSettings, s, theta, phi):
-    dX_dtheta_and_dX_dphi = _cartesian_position_interpolated_grad(Rmnc, Zmns, mpol_vector, ntor_vector, settings, s, theta, phi)
+def _normal_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
+    dX_dtheta_and_dX_dphi = _cartesian_position_interpolated_grad(data, settings, s, theta, phi)
     # We use dr/dphi x dr/dtheta 
     # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
     # This is accomplised by using the dphi_x_dtheta member. 
-    #
-    n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0]) * dphi_x_dtheta
+    n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0]) * data.dphi_x_dtheta
     n = n / jnp.linalg.norm(n, axis=-1, keepdims=True)
     return n
 
-_normal_interpolated_jit = jax.jit(_normal_interpolated, static_argnums=(5))
+_normal_interpolated_jit = jax.jit(_normal_interpolated)
+
+
+# ===================================================================================================================================================================================
+#                                                                           Principal curvatures
+# ===================================================================================================================================================================================
+_cartesian_position_interpolated_grad_grad = jax.jit(jnp.vectorize(stack_jacfwd(stack_jacfwd(_cartesian_position_interpolated, argnums=(3,4)), argnums = (3,4)), excluded=(0,1), signature='(),(),()->(3,2,2)'))
+
+@jax.jit
+def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
+    dX_dtheta_and_dX_dphi                        = _cartesian_position_interpolated_grad(data, settings, s, theta, phi)
+    d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2 = _cartesian_position_interpolated_grad_grad(data, settings, s, theta, phi)
+
+    # dx_dtheta_and_dX_dphi has shape (..., 3, 2), last index 0 is d/dtheta, last index 1 is d/dphi
+    # d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2 has shape (..., 3, 2, 2) # 0,0 is d2/dtheta2, 0,1 and 1,0 is d2/dthetadphi, 1,1 is d2/dphi2
+    
+    E = jnp.einsum("...i, ...i->...", dX_dtheta_and_dX_dphi[..., 0], dX_dtheta_and_dX_dphi[..., 0])
+    F = jnp.einsum("...i, ...i->...", dX_dtheta_and_dX_dphi[..., 0], dX_dtheta_and_dX_dphi[..., 1])
+    G = jnp.einsum("...i, ...i->...", dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 1])
+    
+    normal_vector = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0]) * data.dphi_x_dtheta
+    normal_vector = normal_vector / jnp.linalg.norm(normal_vector, axis=-1, keepdims=True)
+
+    L = jnp.einsum("...i, ...i->...", normal_vector, d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2[..., 0, 0])
+    M = jnp.einsum("...i, ...i->...", normal_vector, d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2[..., 0, 1])
+    N = jnp.einsum("...i, ...i->...", normal_vector, d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2[..., 1, 1])
+
+    H = (E * N - 2 * F * M + G * L) / (2 * (E * G - F**2))
+    K = (L * N - M**2) / (E * G - F**2)
+    
+    sqrt_discriminant = jnp.sqrt(H**2 - K) 
+    k1 = - (H + sqrt_discriminant)
+    k2 = - (H - sqrt_discriminant)
+
+    return jnp.stack([k1, k2], axis=-1)
