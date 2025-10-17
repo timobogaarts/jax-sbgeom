@@ -55,6 +55,19 @@ def time_jsb_function_mult(fun, *args, n_repetitions = 10, jsb = True):
         timings.append(end - start)
     return result, onp.mean(timings), onp.std(timings)
 
+def time_jsb_function_nested(fun, *args, n_repetitions = 10, jsb = True):
+    timings = []
+    for n in range(n_repetitions):
+        start = time.time()
+        if jsb:
+            result = fun(*args)
+            result[0][0].block_until_ready()            
+        else:
+            result = fun(*args)
+        end = time.time()
+        timings.append(end - start)
+    return result, onp.mean(timings), onp.std(timings)
+
 def print_timings(name : str, time_jax : float, std_jax : float, time_sbgeom : float, std_sbgeom : float):
     print(f"{name:20s} passed | jax-sbgeom: {time_jax*1e3:8.3f} ms ± {std_jax*1e3:8.3f} ms | SBGeom: {time_sbgeom*1e3:8.3f} ms ± {std_sbgeom*1e3:8.3f} ms")
 
@@ -140,7 +153,7 @@ def test_meshing_surface(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", to
 
 
     (pos_jax, tri_jax), time_jax, std_jax          = time_jsb_function_mult(jsb.flux_surfaces.flux_surface_meshing.mesh_surface, fs_jax, s, tor_extent,  n_theta, n_phi, True, n_repetitions=n_repetitions)
-    mesh_sbgeom, time_sbgeom, std_sbgeom           = time_jsb_function(     fs_sbgeom.Mesh_Surface, s, 0.0, n_phi, n_theta, tor_extent.start, tor_extent.end,                  n_repetitions=n_repetitions, jsb=False)
+    mesh_sbgeom, time_sbgeom, std_sbgeom           = time_jsb_function(     fs_sbgeom.Mesh_Surface, s, 0.0, n_phi, n_theta, tor_extent.start, tor_extent.end,               True,   n_repetitions=n_repetitions, jsb=False)
 
     # The sampling cannot be directly influenced. 
     # Instead, we just reverse the theta direction by flipping all vertices if required 
@@ -155,3 +168,46 @@ def test_meshing_surface(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", to
     assert jnp.allclose(tri_jax, mesh_sbgeom.connectivity, atol=1e-13)
 
     print_timings("mesh_surface", time_jax, std_jax, time_sbgeom, std_sbgeom)
+
+
+def _get_mesh_surfaces_closed(flux_surfaces: jsb.flux_surfaces.FluxSurface,
+                          s_values_start : float, s_value_end : float, include_axis : bool,
+                          phi_start : float, phi_end : float, full_angle : bool,
+                          n_theta : int, n_phi : int, n_cap : int):
+    meshes =  jsb.flux_surfaces.flux_surface_meshing._mesh_surfaces_closed(flux_surfaces,
+                                                                        s_values_start,
+                                                                        s_value_end,
+                                                                        include_axis,
+                                                                        phi_start,
+                                                                        phi_end,
+                                                                        full_angle,
+                                                                        n_theta,
+                                                                        n_phi,
+                                                                        n_cap)
+    
+    pts     = meshes[0]
+    conn    = meshes[1]
+
+    assert conn.min() >= 0 and conn.max() < pts.shape[0]
+    
+    return pts, conn
+
+def _get_all_closed_surfaces(fs_jax):
+    
+    single_surface  = _get_mesh_surfaces_closed(fs_jax, 0.0, 1.0, True,  0.2, 2.0 * jnp.pi, True,  50, 60, 10)    
+    two_surfaces    = _get_mesh_surfaces_closed(fs_jax, 0.2, 1.0, False, 0.0, 2.0 * jnp.pi, True,  50, 60, 10)
+    closed_no_axis  = _get_mesh_surfaces_closed(fs_jax, 0.2, 1.0, False, 0.0, 0.3 * jnp.pi, False, 50, 60, 10)    
+    closed_axis     = _get_mesh_surfaces_closed(fs_jax, 0.0, 1.0, True,  0.0, 0.3 * jnp.pi, False, 50, 60, 10)
+
+    return [single_surface, two_surfaces, closed_no_axis, closed_axis]
+    
+
+
+def test_all_closed_surfaces(vmec_file, n_repetitions = 1):
+    fs_jax, fs_sbgeom = _get_flux_surfaces(vmec_file)
+
+    surfaces, time_jax, std_jax = time_jsb_function_nested(_get_all_closed_surfaces, fs_jax, n_repetitions=n_repetitions)
+    
+    print_timings("all closed surfaces", time_jax, std_jax, 0.0, 0.0)
+    print("\t (sbgeom has different closed surfaces)")
+
