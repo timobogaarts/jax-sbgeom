@@ -5,6 +5,7 @@ import StellBlanket.SBGeom as SBGeom
 import jax
 import time
 
+
 from jax_sbgeom.flux_surfaces.flux_surfaces_base import _check_whether_make_normals_point_outwards_required, ToroidalExtent
 
 jax.config.update("jax_enable_x64", True)
@@ -201,11 +202,24 @@ def _get_all_closed_surfaces(fs_jax):
     return [single_surface, two_surfaces, closed_no_axis, closed_axis]
     
 
+def _mesh_to_pyvista_mesh(pts, conn):
+    import pyvista as pv
+    points_onp = onp.array(pts)
+    conn_onp   = onp.array(conn)
+    faces_pv = onp.hstack([onp.full((conn_onp.shape[0], 1), 3), conn_onp]).astype(onp.int64)
+    faces_pv = faces_pv.flatten()
+    mesh = pv.PolyData(points_onp, faces_pv)
+    return mesh
 
 def test_all_closed_surfaces(vmec_file, n_repetitions = 1):
     fs_jax, fs_sbgeom = _get_flux_surfaces(vmec_file)
 
     surfaces, time_jax, std_jax = time_jsb_function_nested(_get_all_closed_surfaces, fs_jax, n_repetitions=n_repetitions)
+
+    for surf in surfaces:
+        points, connectivity = surf
+        mesh = _mesh_to_pyvista_mesh(points, connectivity)  
+        assert jnp.allclose(mesh.volume, jsb.flux_surfaces.flux_surface_meshing._volume_of_mesh(points, connectivity), atol=1e-10)
     
     print_timings("all closed surfaces", time_jax, std_jax, 0.0, 0.0)
     print("\t (sbgeom has different closed surfaces)")

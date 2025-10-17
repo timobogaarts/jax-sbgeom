@@ -294,7 +294,6 @@ def _normal_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings
 
 _normal_interpolated_jit = jax.jit(_normal_interpolated)
 
-
 # ===================================================================================================================================================================================
 #                                                                           Principal curvatures
 # ===================================================================================================================================================================================
@@ -327,3 +326,31 @@ def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxS
     k2 = - (H - sqrt_discriminant)
 
     return jnp.stack([k1, k2], axis=-1)
+
+
+# ===================================================================================================================================================================================
+#                                                                           Volume and Surface
+# ===================================================================================================================================================================================
+
+_cylindrical_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cylindrical_position_interpolated, argnums=(3,4)), excluded=(0,1), signature='(),(),()->(3,2)'))
+
+def _volume_from_fourier(data : FluxSurfaceData, settings : FluxSurfaceSettings, s : float):
+
+    n_theta = settings.mpol * 3
+    n_phi   = settings.ntor * settings.nfp * 3
+    
+    theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
+    phi   = jnp.linspace(0, 2 * jnp.pi, n_phi, endpoint=False)
+
+    tt, pp = jnp.meshgrid(theta, phi, indexing='ij')
+
+    RZphi = _cylindrical_position_interpolated(data, settings, s, tt, pp )
+
+    R = RZphi[..., 0]
+    Z = RZphi[..., 1]
+
+    dRZphi_dtheta_and_dRZphi_dphi = _cylindrical_position_interpolated_grad(data, settings, s, tt, pp)
+
+    
+
+

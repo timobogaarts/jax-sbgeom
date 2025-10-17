@@ -343,8 +343,7 @@ def _mesh_surfaces_closed_points(flux_surfaces: FluxSurface,
             return _mesh_surface_points(flux_surfaces, s = s_value_end, phi_start = phi_start, phi_end = phi_end, full_angle = full_angle, n_theta = n_theta, n_phi = n_phi)
         elif (not include_axis) and full_angle:
             # 2. include_axis = False & full_angle = True: We have two surfaces. These are already closed so we can just return them.
-            s_values_outer          = jnp.array([s_values_start, s_value_end])        
-            normals_facing_outwards = jnp.array([False, True])        
+            s_values_outer            = jnp.array([s_values_start, s_value_end])                    
             multiple_surface_points   =  _mesh_surface_points_multiple(flux_surfaces, s_values_outer, phi_start, phi_end,  full_angle, n_theta,  n_phi)
             return jnp.concatenate(multiple_surface_points, axis=0)
         elif (not include_axis) and (not full_angle):            
@@ -367,6 +366,7 @@ def _mesh_surfaces_closed_points(flux_surfaces: FluxSurface,
             s_cap = jnp.linspace(s_values_start, s_value_end, n_cap + 2)[1:-1] # Exclude first and last
             t_cap = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
             t_cap_mg, s_cap_mg = jnp.meshgrid(t_cap, s_cap, indexing='ij')
+            
             positions_cap_start = flux_surfaces.cartesian_position(s_cap_mg, t_cap_mg, phi_start).reshape(-1,3)
             positions_cap_end   = flux_surfaces.cartesian_position(s_cap_mg, t_cap_mg, phi_end  ).reshape(-1,3) 
 
@@ -382,11 +382,28 @@ def _mesh_surfaces_closed(flux_surfaces: FluxSurface,
     connectivity = _mesh_surfaces_closed_connectivity(include_axis, full_angle, n_theta, n_phi, n_cap)
     points       = _mesh_surfaces_closed_points(flux_surfaces, s_values_start, s_value_end, include_axis, phi_start, phi_end, full_angle, n_theta, n_phi, n_cap)
     return points, connectivity
+# ===================================================================================================================================================================================
+#                                                                           Functions on meshes
+# ===================================================================================================================================================================================
 
+def _volume_of_mesh(positions : jnp.ndarray, connectivity : jnp.ndarray):
+    if connectivity.shape[-1] == 3:
+        # Triangle mesh calculation
+
+        a = positions[connectivity[:,0], :]
+        b = positions[connectivity[:,1], :]
+        c = positions[connectivity[:,2], :]
+        cross_prod = jnp.cross(b - a, c - a)
+        volume = jnp.sum(jnp.einsum('ij,ij->i', a, cross_prod)) / 6.0
+        return volume
 
 # ===================================================================================================================================================================================
 #                                                                           Convenience Functions
 # ===================================================================================================================================================================================
+
+# These functions are for exposing a simple interface to users. They are not jitted and cannot be because the toroidal extent determines whether it is closed, which determines the number of triangles. 
+# Similarly, the closed surface meshing function cannot be jitted because of the same reason (plus whether to include the axis or not).
+# Functions should be built on the internal jitted functions above.
 
 def mesh_surface(flux_surfaces: FluxSurface, s : float, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int, normals_facing_outwards : bool = True):
     """
