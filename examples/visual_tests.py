@@ -15,7 +15,7 @@ from jax_sbgeom.flux_surfaces.flux_surfaces_base import _cartesian_position_inte
 from tests.flux_surfaces.flux_surface_base import test_position, _get_flux_surfaces, _sampling_grid, _1d_sampling_grid, test_normals, test_meshing_surface, test_principal_curvatures, _get_all_closed_surfaces, test_all_closed_surfaces
 #
 import pyvista as pv
-pv.set_jupyter_backend('client')
+
 
 def run_closed_surfaces_test(vmec_i):
     def _get_flux_surfaces(vmec_file):
@@ -42,7 +42,7 @@ def run_closed_surfaces_test(vmec_i):
             plotter.subplot(i // 2, i % 2)
             mesh_colors = onp.array(onp.arange(mesh.n_cells), dtype=float)
             plotter.add_mesh(mesh, scalars = mesh_colors, show_edges=True, opacity = 0.9, cmap = 'rainbow')
-            plotter.add_arrows(mesh.cell_centers().points, mesh['Normals'], mag=0.5, color='red')
+            plotter.add_arrows(mesh.cell_centers().points, mesh['Normals'], mag=0.2, color='red')
 
         plotter.show()
     plot_all_surfaces(surfaces)

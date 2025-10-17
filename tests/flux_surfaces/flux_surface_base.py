@@ -5,7 +5,7 @@ import StellBlanket.SBGeom as SBGeom
 import jax
 import time
 
-from jax_sbgeom.flux_surfaces.flux_surfaces_base import _check_whether_make_normals_point_outwards_required
+from jax_sbgeom.flux_surfaces.flux_surfaces_base import _check_whether_make_normals_point_outwards_required, ToroidalExtent
 
 jax.config.update("jax_enable_x64", True)
 
@@ -171,16 +171,15 @@ def test_meshing_surface(vmec_file = "/home/tbogaarts/data/helias5_vmec.nc4", to
 
 
 def _get_mesh_surfaces_closed(flux_surfaces: jsb.flux_surfaces.FluxSurface,
-                          s_values_start : float, s_value_end : float, include_axis : bool,
-                          phi_start : float, phi_end : float, full_angle : bool,
+                          s_values_start : float, s_value_end : float,
+                          phi_start : float, phi_end : float,
                           n_theta : int, n_phi : int, n_cap : int):
-    meshes =  jsb.flux_surfaces.flux_surface_meshing._mesh_surfaces_closed(flux_surfaces,
+    
+    tor_extent = ToroidalExtent(phi_start, phi_end)
+    meshes =  jsb.flux_surfaces.flux_surface_meshing.mesh_surfaces_closed(flux_surfaces,
                                                                         s_values_start,
                                                                         s_value_end,
-                                                                        include_axis,
-                                                                        phi_start,
-                                                                        phi_end,
-                                                                        full_angle,
+                                                                        tor_extent,                                                                        
                                                                         n_theta,
                                                                         n_phi,
                                                                         n_cap)
@@ -194,10 +193,10 @@ def _get_mesh_surfaces_closed(flux_surfaces: jsb.flux_surfaces.FluxSurface,
 
 def _get_all_closed_surfaces(fs_jax):
     
-    single_surface  = _get_mesh_surfaces_closed(fs_jax, 0.0, 1.0, True,  0.2, 2.0 * jnp.pi, True,  50, 60, 10)    
-    two_surfaces    = _get_mesh_surfaces_closed(fs_jax, 0.2, 1.0, False, 0.0, 2.0 * jnp.pi, True,  50, 60, 10)
-    closed_no_axis  = _get_mesh_surfaces_closed(fs_jax, 0.2, 1.0, False, 0.0, 0.3 * jnp.pi, False, 50, 60, 10)    
-    closed_axis     = _get_mesh_surfaces_closed(fs_jax, 0.0, 1.0, True,  0.0, 0.3 * jnp.pi, False, 50, 60, 10)
+    single_surface  = _get_mesh_surfaces_closed(fs_jax, 0.0, 1.0,  0.0, 2.0 * jnp.pi,  50, 60, 10)    
+    two_surfaces    = _get_mesh_surfaces_closed(fs_jax, 0.2, 1.0,  0.0, 2.0 * jnp.pi,  50, 60, 10)
+    closed_no_axis  = _get_mesh_surfaces_closed(fs_jax, 0.2, 1.0,  0.0, 0.3 * jnp.pi,  50, 60, 10)    
+    closed_axis     = _get_mesh_surfaces_closed(fs_jax, 0.0, 1.0,  0.0, 0.3 * jnp.pi,  50, 60, 10)
 
     return [single_surface, two_surfaces, closed_no_axis, closed_axis]
     

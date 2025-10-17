@@ -9,12 +9,24 @@ from typing import List
 #                                                                           Triangle Meshing
 # ===================================================================================================================================================================================
 
+def _concatenate_connectivity(connectivity_list : List[jnp.ndarray], points_per_mesh : List[int]):
+    '''
+    Internal function to concatenate multiple mesh connectivities into a single connectivity.
+
+    Parameters
+    ----------
+    connectivity_array : List[jnp.ndarray]
+        A list of arrays of shape (n_points_per_element, 3) containing the indices of the vertices for each triangle for each surface.        
+    '''
+    added_connectivity = jnp.cumulative_sum(jnp.array(points_per_mesh), include_initial=True)
+    connectivity       = jnp.concatenate([conn + added_connectivity[i] for i, conn in enumerate(connectivity_list)], axis=0)
+    return connectivity
 
 @partial(jax.jit, static_argnums = (0))
 def _build_closed_strip(n_strip : int, offset_index_0 : int, offset_index_1 : int, normals_orientation : bool, stride_1: int = 1, stride_2 : int = 1):
     '''
     This functions connects two closed strips together. Each strip has n_strip vertices, and the first vertex of each strip is at offset_index_0 and offset_index_1 respectively.
-    Normals_orientation determines whether the normals should face outwards (True) or inwards (False). Strides allow meshing of non-adjacent vertices.
+    Normals_orientation determines whether the normals should face outwards (True) or inwards (False). Strides allow meshing of non-adjacent vertices.    
 
     Parameters
     ----------
@@ -94,6 +106,10 @@ def _build_closed_wedges(n_wedge : int, offset_index_0 : int, offset_index_1 : i
 
 
 _build_closed_strips = jax.vmap(_build_closed_strip, in_axes=(None,0,0,None, None, None))
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                                        Single Surface Meshing 
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 @partial(jax.jit, static_argnums = (0,1,2,3))
 def _build_triangles_surface(n_theta : int, theta_blocks : int, n_phi : int, phi_blocks : int, normals_orientation : bool):
@@ -222,36 +238,10 @@ def _mesh_surface(flux_surfaces : FluxSurface, s : float, phi_start : float, phi
 _mesh_multiple_surfaces = jax.jit(jax.vmap(_mesh_surface, in_axes=(None, 0, None, None, None, None, None, 0)), static_argnums=(4,5,6)) # this is only for convenience: internally, do not use since we want to separate connectivity and points.
 
 
-def _concatenate_meshes(positions_list : List[jnp.ndarray], connectivity_list : List[jnp.ndarray]):
-    '''
-    Internal function to concatenate multiple meshes into a single mesh.
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                                        Closed Surface Meshing 
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-    Parameters
-    ----------
-    positions_array : List[jnp.ndarray]
-        A list of arrays of shape (n_points, 3) containing the Cartesian coordinates of the mesh points for each surface.
-    connectivity_array : List[jnp.ndarray]
-        A list of arrays of shape (n_points_per_element, 3) containing the indices of the vertices for each triangle for each surface.        
-    '''
-    n_points_per_mesh  = jnp.array([pos.shape[0] for pos in positions_list])    
-    positions          = jnp.concatenate(positions_list, axis=0)
-
-    added_connectivity = jnp.cumulative_sum(n_points_per_mesh, include_initial=True)
-    connectivity       = jnp.concatenate([conn + added_connectivity[i] for i, conn in enumerate(connectivity_list)], axis=0)
-    return positions, connectivity
-
-def _concatenate_connectivity(connectivity_list : List[jnp.ndarray], points_per_mesh : List[int]):
-    '''
-    Internal function to concatenate multiple mesh connectivities into a single connectivity.
-
-    Parameters
-    ----------
-    connectivity_array : List[jnp.ndarray]
-        A list of arrays of shape (n_points_per_element, 3) containing the indices of the vertices for each triangle for each surface.        
-    '''
-    added_connectivity = jnp.cumulative_sum(jnp.array(points_per_mesh), include_initial=True)
-    connectivity       = jnp.concatenate([conn + added_connectivity[i] for i, conn in enumerate(connectivity_list)], axis=0)
-    return connectivity
 
 def _mesh_surfaces_closed_connectivity(include_axis : bool, full_angle : bool, n_theta : int, n_phi : int, n_cap : int):    
     # We have the following possibilities:
@@ -329,12 +319,7 @@ def _mesh_surfaces_closed_connectivity(include_axis : bool, full_angle : bool, n
         connectivity_end_m         = _build_triangles_surface(n_theta, n_theta, n_cap, n_cap - 1, normals_orientation=False) + start_cap_1
         connectivity_end_e         = _build_closed_strip(     n_theta,  start_cap_1_edge, start_surface + (n_phi - 1), normals_orientation=False, stride_1 = n_cap, stride_2 =  n_phi).reshape(-1,3)
 
-
-
-
         return jnp.concatenate([edge_surface_connectivity, connectivity_start_axis, connectivity_start_m, connectivity_start_e, connectivity_end_axis, connectivity_end_m, connectivity_end_e], axis=0)
-
-
 
     else:
         return 0
@@ -398,6 +383,11 @@ def _mesh_surfaces_closed(flux_surfaces: FluxSurface,
     points       = _mesh_surfaces_closed_points(flux_surfaces, s_values_start, s_value_end, include_axis, phi_start, phi_end, full_angle, n_theta, n_phi, n_cap)
     return points, connectivity
 
+
+# ===================================================================================================================================================================================
+#                                                                           Convenience Functions
+# ===================================================================================================================================================================================
+
 def mesh_surface(flux_surfaces: FluxSurface, s : float, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int, normals_facing_outwards : bool = True):
     """
     Create a mesh of points on a flux surface at normalized radius s, with n_theta poloidal and n_phi toroidal points.
@@ -431,6 +421,47 @@ def mesh_surface(flux_surfaces: FluxSurface, s : float, toroidal_extent : Toroid
     """
 
     return _mesh_surface(flux_surfaces, s, *toroidal_extent, n_theta, n_phi,  normals_facing_outwards)
+
+def mesh_surfaces_closed(flux_surfaces: FluxSurface,
+                         s_values_start : float, s_value_end : float,
+                         toroidal_extent : ToroidalExtent,
+                         n_theta : int, n_phi : int, n_cap : int):
+    '''
+    Create a closed mesh of points on flux surfaces between normalized radius s_values_start and s_value_end, with n_theta poloidal and n_phi toroidal points.
+
+    This cannot be jitted because the toroidal extent determines whether it is closed, which determines the number of triangles. Therefore, the 
+    size of the arrays is unknown at compile time (which cannot be jitted unless toroidal_extent is static, but this is inconvenient because then the function would recompile for every different extent).
+
+    This is therefore a convenience function only. Internal functions should not build on this function.
+
+    Parameters
+    ----------
+    flux_surfaces : FluxSurface
+        The flux surface object containing the parameterization.
+    s_values_start : float
+        The starting normalized radius of the flux surfaces to mesh.
+    s_value_end : float
+        The ending normalized radius of the flux surfaces to mesh.
+    include_axis : bool
+        Whether to include the magnetic axis in the mesh.
+    toroidal_extent : ToroidalExtent
+        The toroidal extent of the mesh. 
+    n_theta : int
+        The number of poloidal points.
+    n_phi : int
+        The number of toroidal points.
+    n_cap : int
+        The number of radial points in the caps if not full toroidal extent.
+    Returns
+    -------
+    positions : jnp.ndarray
+        An array of shape (n_points, 3) containing the Cartesian coordinates of the mesh points.
+    triangles : jnp.ndarray
+        An array of shape (n_triangles, 3) containing the indices of the vertices for each triangle.
+
+    '''
+    include_axis = s_values_start == 0.0
+    return _mesh_surfaces_closed(flux_surfaces, s_values_start, s_value_end, include_axis, *toroidal_extent, n_theta, n_phi, n_cap)
 
 
 
