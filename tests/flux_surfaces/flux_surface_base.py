@@ -224,3 +224,16 @@ def test_all_closed_surfaces(vmec_file, n_repetitions = 1):
     print_timings("all closed surfaces", time_jax, std_jax, 0.0, 0.0)
     print("\t (sbgeom has different closed surfaces)")
 
+def test_volumes(vmec_file, n_repetitions = 1):
+    from jax_sbgeom.flux_surfaces.flux_surfaces_base import _volume_from_fourier_half_mod, _volume_from_fourier
+    fs_jax, fs_sbgeom = _get_flux_surfaces(vmec_file)
+
+    s = 0.5
+
+    vol_jax, time_jax, std_jax          = time_jsb_function(_volume_from_fourier_half_mod, fs_jax.data, fs_jax.settings, s, n_repetitions=n_repetitions)
+    vol_jax2, time_jax2, std_jax2       = time_jsb_function(_volume_from_fourier, fs_jax.data, fs_jax.settings, s, n_repetitions=n_repetitions)
+
+    assert jnp.allclose(vol_jax, vol_jax2, atol=1e-13)
+
+    print_timings("Volume", time_jax, std_jax, time_jax2, std_jax2)
+    print("\t (sbgeom has no volume function)")

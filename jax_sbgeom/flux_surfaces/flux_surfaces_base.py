@@ -282,13 +282,19 @@ _cartesian_position_interpolated_jit = jax.jit(_cartesian_position_interpolated)
 # furthermore, the jacobians are stacked to ensure jnp.vectorize can be used (it does not support multiple outputs like given by jacfwd)
 _cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cartesian_position_interpolated, argnums=(3,4)), excluded=(0,1), signature='(),(),()->(3,2)'))
 
-
-def _normal_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
+def _dx_dphi_cross_dx_dtheta(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
     dX_dtheta_and_dX_dphi = _cartesian_position_interpolated_grad(data, settings, s, theta, phi)
     # We use dr/dphi x dr/dtheta 
     # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
     # This is accomplised by using the dphi_x_dtheta member. 
-    n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0])
+    n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0])    
+    return n
+
+def _normal_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):    
+    # We use dr/dphi x dr/dtheta 
+    # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
+    # This is accomplised by using the dphi_x_dtheta member. 
+    n = _dx_dphi_cross_dx_dtheta(data, settings, s, theta, phi)
     n = n / jnp.linalg.norm(n, axis=-1, keepdims=True)
     return n
 
@@ -332,25 +338,124 @@ def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxS
 #                                                                           Volume and Surface
 # ===================================================================================================================================================================================
 
-_cylindrical_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cylindrical_position_interpolated, argnums=(3,4)), excluded=(0,1), signature='(),(),()->(3,2)'))
-
+@partial(jax.jit, static_argnums=(1))
 def _volume_from_fourier(data : FluxSurfaceData, settings : FluxSurfaceSettings, s : float):
+    ''' 
+    Compute the volume enclosed by the flux surface at s using a Fourier representation.
 
-    n_theta = settings.mpol * 3
-    n_phi   = settings.ntor * settings.nfp * 3
+    A full module is used for the integration. Using the divergence theorem, the volume is computed as:
+        V = (1/3) * ∫∫ (r · n) dA
+    where r is the position vector, n is the outward normal vector, and dA is the differential area element on the surface.
+    Note that dA = |dx/dtheta x dx/dphi| dtheta dphi and thus r · n dA = r · (dx/dphi x dx/dtheta) dtheta dphi.
+    The trapezoidal rule is then used to arrive at the final value.
+
+
+    Parameters:
+    -----------
+    data : FluxSurfaceData
+        The flux surface data containing Fourier coefficients.
+    settings : FluxSurfaceSettings
+        The flux surface settings.
+    s : float
+        The normalized flux surface label (0 <= s <= 1).
+    Returns:
+    --------
+    volume : float
+        The volume enclosed by the flux surface at s.
+    '''
+    # x:          m,n Fourier modes
+    # dx_dtheta:  m,n fourier modes
+    # dx_dphi:    m,n fourier modes
+    # normal: m + m, m+ fourier modes
+    # x.normal -> 3 * m,n fourier modes
+    # Nyquist -> 6 times the mode number
+    nyquist_sampling = 6
+
+    n_theta = settings.mpol * nyquist_sampling
+    n_phi   = settings.ntor *  nyquist_sampling 
     
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    phi   = jnp.linspace(0, 2 * jnp.pi, n_phi, endpoint=False)
+    phi   = jnp.linspace(0, 2 * jnp.pi / settings.nfp, n_phi, endpoint=False)
+    
+    dtheta = 2 * jnp.pi / n_theta
+    dphi   = 2 * jnp.pi / settings.nfp  /  n_phi 
 
     tt, pp = jnp.meshgrid(theta, phi, indexing='ij')
+    
+    surface_normals      = _dx_dphi_cross_dx_dtheta(data, settings, s, tt, pp)
 
-    RZphi = _cylindrical_position_interpolated(data, settings, s, tt, pp )
+    r                     = _cartesian_position_interpolated_jit(data, settings, s, tt, pp)    
+    f_ij = jnp.einsum('...i,...i->...', r, surface_normals)
 
-    R = RZphi[..., 0]
-    Z = RZphi[..., 1]
+    volume = jnp.sum(f_ij) * dtheta * dphi / 3.0 * settings.nfp 
 
-    dRZphi_dtheta_and_dRZphi_dphi = _cylindrical_position_interpolated_grad(data, settings, s, tt, pp)
+    return volume
 
+@partial(jax.jit, static_argnums=(1))
+def _volume_from_fourier_half_mod(data : FluxSurfaceData, settings : FluxSurfaceSettings, s : float):
+    ''' 
+    Compute the volume enclosed by the flux surface at s using a Fourier representation.
+
+    A half module is used for the integration. Using the divergence theorem, the volume is computed as:
+        V = (1/3) * ∫∫ (r · n) dA
+    where r is the position vector, n is the outward normal vector, and dA is the differential area element on the surface.
+    Note that dA = |dx/dtheta x dx/dphi| dtheta dphi and thus r · n dA = r · (dx/dphi x dx/dtheta) dtheta dphi.
+    The trapezoidal rule is then used to arrive at the final value.
+
+
+    Parameters:
+    -----------
+    data : FluxSurfaceData
+        The flux surface data containing Fourier coefficients.
+    settings : FluxSurfaceSettings
+        The flux surface settings.
+    s : float
+        The normalized flux surface label (0 <= s <= 1).
+    Returns:
+    --------
+    volume : float
+        The volume enclosed by the flux surface at s.
+    '''
+
+    nyquist_sampling = 6
+    n_theta = settings.mpol * nyquist_sampling
+
+    # We add one to always satisfy nyquist.
+    n_phi   = int((settings.ntor *  nyquist_sampling + 1) / 2) 
+    
+    # Now, given that we want to sample half of a module, we have two choices depending on the full module n_phi:
+
+    # - Include the half module boundary
+
+    # - Exclude the half module boundary
+
+    # If we include the half-module boundary, we have to use 
+    # phi = jnp.linspace(0, 2 * jnp.pi / settings.nfp , n_phi, endpoint=True)
+    # and then subtract half of the initial phi=0 and half of the phi = pi / nfp boundary contributions from the volume integral
+
+    # If we exclude the half-module boundary, we have to use
+    # phi = jnp.linspace(0, 2 * jnp.pi / settings.nfp, 2 * n_phi, endpoint=True)[:n_phi]
+    # and then double the volume integral and subtracth only half of the initial phi=0 boundary.
+    
+    # We chose the latter option since it is one less computation. Numerically, they are exactly the same.
+
+    theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
+    phi   = jnp.linspace(0, 2 * jnp.pi / settings.nfp , 2* n_phi, endpoint=True)[:n_phi]
+    
+    dtheta = 2 * jnp.pi / n_theta
+    dphi   = phi[1]- phi[0]
+        
+    tt, pp = jnp.meshgrid(theta, phi, indexing='ij')
+    
+    surface_normals        = _dx_dphi_cross_dx_dtheta(data, settings, s, tt, pp)
+
+    r                      = _cartesian_position_interpolated_jit(data, settings, s, tt, pp)    
+    f_ij                   = jnp.einsum('...i,...i->...', r, surface_normals)
+
+    base_half_mod          = jnp.sum(f_ij) * dtheta * dphi / 3.0 
+    boundary_correction_b1 = jnp.sum(f_ij[:,0]) * dtheta * dphi / 3.0 
+
+    return (base_half_mod * 2.0 -  boundary_correction_b1) * settings.nfp
     
 
 
