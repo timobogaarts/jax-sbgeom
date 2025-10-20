@@ -26,13 +26,15 @@ sys.path.append(project_root)
 vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
 
 from jax_sbgeom.flux_surfaces.flux_surfaces_base import _cartesian_position_interpolated_jit, _cylindrical_position_interpolated, _cartesian_position_interpolated_grad, ToroidalExtent
-from tests.flux_surfaces.flux_surface_base import test_position, _get_flux_surfaces, _sampling_grid, _1d_sampling_grid, test_normals, test_meshing_surface, test_principal_curvatures, test_all_closed_surfaces
+from tests.flux_surfaces.test_flux_surface_base import test_position, _get_flux_surfaces, _sampling_grid, _1d_sampling_grid, test_normals, test_meshing_surface, test_principal_curvatures, test_all_closed_surfaces, test_all_tetrahedral_meshes, test_watertight_surfaces
 
 test_pos             = True
 test_norm            = True
 test_meshing_surf    = True
 test_principal_curv  = True
 test_closed_surf     = True
+test_tetrahedral_conn= True
+test_watertight      = True
 for vmec_file in vmec_files:
     print(f"\n--- Testing VMEC file: {vmec_file} ---")
     
@@ -51,7 +53,7 @@ for vmec_file in vmec_files:
 
     if test_meshing_surf:
         try:
-            test_meshing_surface(vmec_file, n_repetitions=1)
+            test_meshing_surface(vmec_file, tor_extent='half_module', n_repetitions=1)
             test_meshing_surface(vmec_file, tor_extent='full', n_repetitions=1)
         except Exception as e:
             print(f"test_meshing_surface failed for {vmec_file} with error: {e}")
@@ -65,3 +67,13 @@ for vmec_file in vmec_files:
             test_all_closed_surfaces(vmec_file, n_repetitions=1)
         except Exception as e:
             print(f"test_all_closed_surfaces failed for {vmec_file} with error: {e}")
+    if test_tetrahedral_conn:
+            try:
+                test_all_tetrahedral_meshes(vmec_file, n_repetitions=1)
+            except Exception as e:
+                print(f"test_all_closed_surfaces failed for {vmec_file} with error: {e}")
+    if test_watertight:
+        try:
+            test_watertight_surfaces(vmec_file, n_repetitions=1)
+        except Exception as e:
+            print(f"test_watertight_surfaces failed for {vmec_file} with error: {e}")
