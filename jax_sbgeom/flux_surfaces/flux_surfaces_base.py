@@ -21,8 +21,42 @@ def _cylindrical_to_cartesian(RZphi : jnp.ndarray):
     y = R * jnp.sin(phi)
     return jnp.stack([x, y, Z], axis=-1)
 
+def _cartesian_to_cylindrical(XYZ : jnp.ndarray):
+    x = XYZ[..., 0]
+    y = XYZ[..., 1]
+    z = XYZ[..., 2]
+    R = jnp.sqrt(x**2 + y**2)
+    phi = jnp.arctan2(y, x)
+    return jnp.stack([R, z, phi], axis=-1)
+
 
 def _check_whether_make_normals_point_outwards_required(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray):
+    '''
+    * Internal * 
+    Check whether the Fourier coefficients need to be modified such that the normals point outwards.
+
+    This corresponds to four cases:
+    1. theta = 0 is outboard: 
+        a. dZ_dtheta > 0 at theta = 0 -> normals point outwards -> no change
+        b. dZ_dtheta < 0 at theta = 0 -> normals point inwards -> reverse theta
+    2. theta = pi is outboard:
+        a. dZ_dtheta > 0 at theta = 0 -> normals point inwards -> reverse theta
+        b. dZ_dtheta < 0 at theta = 0 -> normals point outwards -> no change
+
+    Parameters:
+    -----------
+    Rmnc : jnp.ndarray
+        Array of radial Fourier coefficients. Shape (nsurf, nmodes)
+    Zmns : jnp.ndarray
+        Array of vertical Fourier coefficients. Shape (nsurf, nmodes)
+    mpol_vector : jnp.ndarray
+        Array of poloidal mode numbers. Shape (nmodes,)
+    
+    Returns:
+    --------
+    flip_theta : bool
+        Whether to reverse theta to ensure normals point outwards.
+    '''
     # This computes:
     # dZ_dtheta on the lcfs at  theta, phi = 0:
     # dZ_dtheta = jnp.sum(Zmns[-1,:] * mpol_vector * jnp.cos(mpol_vector * 0 - ntor_vector * 0)) = jnp.sum(Zmns[-1,:] * mpol_vector)        
@@ -45,6 +79,26 @@ def _check_whether_make_normals_point_outwards_required(Rmnc : jnp.ndarray, Zmns
     return jnp.logical_not(original_u)
 
 def _reverse_theta_single(m_vec, n_vec, coeff_vec, cosine_sign : bool):
+    '''
+    * Internal * 
+
+    Changes the Fourier coefficients such that theta is replaced by -theta.
+
+    Parameters:
+    -----------
+    m_vec : jnp.ndarray
+        Array of poloidal mode numbers.
+    n_vec : jnp.ndarray
+        Array of toroidal mode numbers.
+    coeff_vec : jnp.ndarray
+        Array of Fourier coefficients. (Rmnc or Zmns)
+    cosine_sign : bool
+        If True, the coefficients correspond to cosine terms. If False, they correspond to sine terms.
+    Returns:
+    --------
+    new_coeff_vec : jnp.ndarray
+        The modified Fourier coefficients after reversing theta.
+    '''
     assert coeff_vec.ndim == 1
     assert m_vec.shape == n_vec.shape == coeff_vec.shape
     
@@ -116,6 +170,43 @@ class FluxSurfaceData:
     def __iter__(self):
         return iter((self.Rmnc, self.Zmns, self.mpol_vector, self.ntor_vector))
     
+def _data_settings_from_hdf5(filename : str, make_normals_point_outwards : bool = True):
+    """Load a FluxSurface from an VMEC-type HDF5 file.
+
+        Parameters:
+        ----------
+        filename : str
+            Path to the HDF5 file.
+        Returns:
+        -------
+        FluxSurface
+            The loaded FluxSurface object.
+
+    """
+
+    with h5py.File(filename) as f:
+        Rmnc = jnp.array(f['rmnc'])            
+        Zmns = jnp.array(f['zmns'])            
+
+        mpol = int(f['mpol'][()])
+        ntor = int(f['ntor'][()])                        
+        nfp  = int(f['nfp'][()])
+
+        assert( jnp.all( _create_mpol_vector(ntor, mpol) == jnp.array(f['xm'])))      # sanity check
+        assert( jnp.all( _create_ntor_vector(ntor, mpol, nfp) == jnp.array(f['xn']))) # sanity check
+        
+        nsurf = int(Zmns.shape[0])
+        settings = FluxSurfaceSettings(
+            mpol=mpol,
+            ntor=ntor,
+            nfp=nfp,                
+            nsurf=nsurf
+        )
+
+        data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings)
+
+        return data, settings
+    
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -137,40 +228,8 @@ class FluxSurface:
     
 
     @classmethod
-    def from_hdf5(cls, filename : str):
-        """Load a FluxSurface from an VMEC-type HDF5 file.
-
-        Parameters:
-        ----------
-        filename : str
-            Path to the HDF5 file.
-        Returns:
-        -------
-        FluxSurface
-            The loaded FluxSurface object.
-
-        """
-
-        with h5py.File(filename) as f:
-            Rmnc = jnp.array(f['rmnc'])            
-            Zmns = jnp.array(f['zmns'])            
-
-            mpol = int(f['mpol'][()])
-            ntor = int(f['ntor'][()])                        
-            nfp  = int(f['nfp'][()])
-
-            assert( jnp.all( _create_mpol_vector(ntor, mpol) == jnp.array(f['xm'])))      # sanity check
-            assert( jnp.all( _create_ntor_vector(ntor, mpol, nfp) == jnp.array(f['xn']))) # sanity check
-            
-            nsurf = Zmns.shape[0]
-            settings = FluxSurfaceSettings(
-                mpol=mpol,
-                ntor=ntor,
-                nfp=nfp,                
-                nsurf=nsurf
-            )
-
-            data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings)
+    def from_hdf5(cls, filename : str):        
+        data, settings = _data_settings_from_hdf5(filename)
         return cls(data=data, settings=settings)
     
 

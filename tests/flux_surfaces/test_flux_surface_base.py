@@ -9,6 +9,24 @@ from functools import partial
 from jax_sbgeom.flux_surfaces.flux_surfaces_base import _check_whether_make_normals_point_outwards_required, ToroidalExtent
 import pytest
 
+def _check_vectorized(fun):
+    # Check that the function is properly vectorized
+    a1 = fun(1.0, 0.2 ,0.3)
+    a2 = fun(jnp.array([1.0,1.0]), 0.2, 0.3)
+    a3 = fun(jnp.array([1.0,1.0]), jnp.array([0.2,0.2]), 0.3)
+    a4 = fun(jnp.array([1.0,1.0]), jnp.array([0.2,0.2]), jnp.array([0.3,0.3]))
+    a5 = fun(1.0, jnp.array([0.2,0.2]), 0.3)
+    a6 = fun(1.0, jnp.array([0.2,0.2]), jnp.array([0.3,0.3]))
+    a7 = fun(jnp.array([1.0,1.0]), 0.2, jnp.array([0.3,0.3]))
+    a8 = fun(1.0, 0.2, jnp.array([0.3,0.3]))
+
+    b_0, b_1 = jnp.meshgrid(jnp.array([0.2,0.2]), jnp.array([0.3,0.3]), indexing='ij')
+
+    b1 = fun(1.0, b_0, b_1)
+    b2 = fun(b_0, 1.0, b_1)
+    b3 = fun(b_0, b_1, 1.0)
+    b4 = fun(b_0, b_1, b_1)
+
 jax.config.update("jax_enable_x64", True)
 
 cached= False
