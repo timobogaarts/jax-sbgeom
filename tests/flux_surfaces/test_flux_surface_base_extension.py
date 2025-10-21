@@ -4,13 +4,10 @@ import numpy as onp
 import StellBlanket.SBGeom as SBGeom 
 import jax
 import time
-
 from functools import partial
 
 import pytest
 from tests.flux_surfaces.test_flux_surface_base import _get_files, _check_vectorized
-
-
 
 jax.config.update("jax_enable_x64", True)
 
@@ -26,6 +23,18 @@ if cached:
 def _get_normal_extended_flux_surfaces(request):    
     fs_jax    = jsb.flux_surfaces.FluxSurfaceNormalExtended.from_hdf5(request.param)
     fs_sbgeom = SBGeom.Flux_Surfaces_Normal_Extended(SBGeom.VMEC.Flux_Surfaces_From_HDF5(request.param))
+    return fs_jax, fs_sbgeom
+
+@pytest.fixture(scope="session", params = _get_files())
+def _get_normal_extended_no_phi_flux_surfaces(request):    
+    fs_jax    = jsb.flux_surfaces.FluxSurfaceNormalExtendedNoPhi.from_hdf5(request.param)
+    fs_sbgeom = SBGeom.Flux_Surfaces_Normal_Extended_No_Phi(SBGeom.VMEC.Flux_Surfaces_From_HDF5(request.param))
+    return fs_jax, fs_sbgeom
+
+@pytest.fixture(scope="session", params = _get_files())
+def _get_normal_extended_constant_phi_flux_surfaces(request):    
+    fs_jax    = jsb.flux_surfaces.FluxSurfaceNormalExtendedConstantPhi.from_hdf5(request.param)
+    fs_sbgeom = SBGeom.Flux_Surfaces_Normal_Extended_Constant_Phi(SBGeom.VMEC.Flux_Surfaces_From_HDF5(request.param))
     return fs_jax, fs_sbgeom
 
 def _extension_s_max():
@@ -60,7 +69,7 @@ def _extended_1d_sampling_grid_stop_1(fs_jax : jsb.flux_surfaces.FluxSurface, n_
     return s, d, t, p
 
 # ===================================================================================================================================================================================
-#                                                                          Positions 
+#                                                                          Positions Normal Extended
 # ===================================================================================================================================================================================
 from tests.flux_surfaces.test_flux_surface_base import _check_position_both, _check_normals_both, _check_principal_curvatures_both
 def test_normal_extension_position(_get_normal_extended_flux_surfaces, n_repetitions=1):
@@ -78,9 +87,45 @@ def test_normal_extension_principal_curvatures(_get_normal_extended_flux_surface
     
     _check_principal_curvatures_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions)
 
-def test_vectorization(_get_normal_extended_flux_surfaces):
+def test_normal_extension_vectorization(_get_normal_extended_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_flux_surfaces
     _check_vectorized(fs_jax.cartesian_position)
     _check_vectorized(fs_jax.normal)
     _check_vectorized(fs_jax.principal_curvatures)
 # we do not need to test the normal vector: it is by definition the same as the base flux surface and SBGeom does not return it.
+# ===================================================================================================================================================================================
+#                                                                          Positions Normal No Phi
+# ===================================================================================================================================================================================
+def test_normal_no_phi_extension_position(_get_normal_extended_no_phi_flux_surfaces, n_repetitions=1):
+    fs_jax, fs_sbgeom = _get_normal_extended_no_phi_flux_surfaces
+    _check_position_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions)
+
+def test_normal_extension_no_phi_vectorization(_get_normal_extended_no_phi_flux_surfaces):
+    fs_jax, fs_sbgeom = _get_normal_extended_no_phi_flux_surfaces
+    _check_vectorized(fs_jax.cartesian_position)
+    _check_vectorized(fs_jax.normal)
+    _check_vectorized(fs_jax.principal_curvatures)
+
+# ===================================================================================================================================================================================
+#                                                                          Positions Normal Constant Phi
+# ===================================================================================================================================================================================
+
+def test_normal_extension_constant_phi_position(_get_normal_extended_constant_phi_flux_surfaces, n_repetitions=1):
+    fs_jax, fs_sbgeom = _get_normal_extended_constant_phi_flux_surfaces
+    _check_position_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions, atol = 1e-6)
+
+def test_normal_extension_constant_phi_normals(_get_normal_extended_constant_phi_flux_surfaces, n_repetitions=1):
+    fs_jax, fs_sbgeom = _get_normal_extended_constant_phi_flux_surfaces
+    # SBGeom doesn't return normals in the extended region, so only test up to s=1 (that should be the same)
+    _check_normals_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions, atol=1e-6)
+
+def test_normal_extension_constant_phi_principal_curvatures(_get_normal_extended_constant_phi_flux_surfaces, n_repetitions=1):
+    fs_jax, fs_sbgeom = _get_normal_extended_constant_phi_flux_surfaces
+    
+    _check_principal_curvatures_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions, atol = 1e-6)
+
+def test_normal_extension_constant_phi_vectorization(_get_normal_extended_constant_phi_flux_surfaces):
+    fs_jax, fs_sbgeom = _get_normal_extended_constant_phi_flux_surfaces
+    _check_vectorized(fs_jax.cartesian_position)
+    _check_vectorized(fs_jax.normal)
+    _check_vectorized(fs_jax.principal_curvatures)
