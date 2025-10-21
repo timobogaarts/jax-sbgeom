@@ -232,6 +232,10 @@ class FluxSurface:
         data, settings = _data_settings_from_hdf5(filename)
         return cls(data=data, settings=settings)
     
+    @classmethod
+    def from_flux_surface(cls, flux_surface_base : "FluxSurface"):
+        return cls(data = flux_surface_base.data, settings = flux_surface_base.settings)
+    
 
     def cylindrical_position(self, s, theta, phi):
         return _cylindrical_position_interpolated_jit(self.data, self.settings, s, theta, phi)
@@ -243,7 +247,7 @@ class FluxSurface:
         return _normal_interpolated_jit(self.data, self.settings, s, theta, phi)
     
     def principal_curvatures(self, s, theta, phi):
-        return _principal_curvatures_interpolated(self.data, self.settings, s, theta, phi)
+        return _principal_curvatures_interpolated_jit(self.data, self.settings, s, theta, phi)
     
     
 @jax.tree_util.register_dataclass
@@ -364,7 +368,7 @@ _normal_interpolated_jit = jax.jit(_normal_interpolated)
 # ===================================================================================================================================================================================
 _cartesian_position_interpolated_grad_grad = jax.jit(jnp.vectorize(stack_jacfwd(stack_jacfwd(_cartesian_position_interpolated, argnums=(3,4)), argnums = (3,4)), excluded=(0,1), signature='(),(),()->(3,2,2)'))
 
-@jax.jit
+
 def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
     dX_dtheta_and_dX_dphi                        = _cartesian_position_interpolated_grad(data, settings, s, theta, phi)
     d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2 = _cartesian_position_interpolated_grad_grad(data, settings, s, theta, phi)
@@ -392,6 +396,7 @@ def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxS
 
     return jnp.stack([k1, k2], axis=-1)
 
+_principal_curvatures_interpolated_jit = jax.jit(_principal_curvatures_interpolated)
 
 # ===================================================================================================================================================================================
 #                                                                           Volume and Surface

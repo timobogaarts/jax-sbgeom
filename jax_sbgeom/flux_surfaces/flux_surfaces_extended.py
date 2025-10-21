@@ -13,16 +13,6 @@ from .flux_surfaces_base import _cartesian_position_interpolated, _normal_interp
 @dataclass(frozen =  True)
 class FluxSurfaceNormalExtended(FluxSurface):
 
-    @classmethod
-    def from_hdf5(cls, filename : str):
-        data, settings = _data_settings_from_hdf5(filename)
-        return cls(data = data, settings = settings)
-    
-    @classmethod
-    def from_flux_surface(cls, flux_surface_base : FluxSurface):
-        return cls(data = flux_surface_base.data, settings = flux_surface_base.settings)
-    
-
     def cartesian_position(self, s, theta, phi):
         return _normal_extended_cartesian_position_jit(self.data, self.settings, s, theta, phi)
     
@@ -43,16 +33,6 @@ class FluxSurfaceNormalExtended(FluxSurface):
 @jax.tree_util.register_dataclass
 @dataclass(frozen =  True)
 class FluxSurfaceNormalExtendedNoPhi(FluxSurface):
-
-    @classmethod
-    def from_hdf5(cls, filename : str):
-        data, settings = _data_settings_from_hdf5(filename)
-        return cls(data = data, settings = settings)
-    
-    @classmethod
-    def from_flux_surface(cls, flux_surface_base : FluxSurface):
-        return cls(data = flux_surface_base.data, settings = flux_surface_base.settings)
-    
 
     def cartesian_position(self, s, theta, phi):
         return _normal_extended_no_phi_cartesian_position_jit(self.data, self.settings, s, theta, phi)
