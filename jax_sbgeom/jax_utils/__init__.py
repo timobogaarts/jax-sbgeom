@@ -1,3 +1,3 @@
-from .utils import stack_jacfwd
+from .utils import stack_jacfwd, interpolate_fractions, interpolate_array
 
-__all__ = ["stack_jacfwd"]
+__all__ = ["stack_jacfwd", "interpolate_fractions", "interpolate_array"]

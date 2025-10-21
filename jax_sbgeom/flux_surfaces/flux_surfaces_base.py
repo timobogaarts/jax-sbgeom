@@ -3,7 +3,7 @@ import h5py
 import jax
 import numpy as onp
 from dataclasses import dataclass
-from jax_sbgeom.jax_utils.utils import stack_jacfwd
+from jax_sbgeom.jax_utils.utils import stack_jacfwd, interpolate_array
 from functools import partial
 
 def _create_mpol_vector(ntor : int, mpol : int):    
@@ -275,22 +275,7 @@ class ToroidalExtent:
         return iter((self.start, self.end, self.full_angle()))
     
     
-# ===================================================================================================================================================================================
-#                                                                           Interpolation of arrays
-# ===================================================================================================================================================================================
-def _interpolate_fractions(s, nsurf):    
-    s_start =  s * (nsurf-1)
-    i0      = jnp.floor(s_start).astype(int)
-    i1      = jnp.minimum(i0 + 1, nsurf - 1)    
-    ds      = s_start - i0    
-    return i0, i1, ds
 
-def _interpolate_array(x_interp, s):
-    nsurf = x_interp.shape[0]
-    i0, i1, ds   = _interpolate_fractions(s, nsurf)
-    x0 = x_interp[i0]
-    x1 = x_interp[i1]
-    return (1 - ds) * x0 + ds * x1
 
 # ===================================================================================================================================================================================
 #                                                                           Positions
@@ -302,7 +287,7 @@ def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxS
     # This in essence computes:
     # R   = jnp.sum(Rmnc_interp[..., None] * jnp.cos(mpol_vector[..., None] * theta[None, ...] - ntor_vector[..., None] * phi[None, ...]), axis=-1)
     # However, although the above can be more efficient, it creates large intermediate arrays and is thus undesirable.
-    # Also, we call _interpolate_array once per mode and per point in this setup
+    # Also, we call interpolate_array once per mode and per point in this setup
     # Instead, we could have vectorized this calculation over all points, but that would also create large intermediate arrays.
     
     # Now, no n_modes x n_points arrays are created.
@@ -310,8 +295,8 @@ def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxS
     # This function is valid for both s,theta,phi all scalars and broadcastable arrays. 
     def fourier_sum(vals, i):
         R, Z = vals
-        R = R + _interpolate_array(data.Rmnc[..., i], s) * jnp.cos(data.mpol_vector[i] * theta - data.ntor_vector[i] * phi)
-        Z = Z + _interpolate_array(data.Zmns[..., i], s) * jnp.sin(data.mpol_vector[i] * theta - data.ntor_vector[i] * phi)
+        R = R + interpolate_array(data.Rmnc[..., i], s) * jnp.cos(data.mpol_vector[i] * theta - data.ntor_vector[i] * phi)
+        Z = Z + interpolate_array(data.Zmns[..., i], s) * jnp.sin(data.mpol_vector[i] * theta - data.ntor_vector[i] * phi)
         return (R,Z), None
     
     # The fourier_sum function automatically broadcast arrays. However, we need to ensure that 
