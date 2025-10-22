@@ -5,12 +5,11 @@ import jax.numpy as jnp
 import numpy as onp
 from typing import Literal
 from jax_sbgeom.jax_utils.utils import interpolate_array_modulo_broadcasted
+from functools import partial
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class Coil(ABC):
-
-
     @abstractmethod 
     def position(self, s):
         '''
@@ -55,10 +54,101 @@ class Coil(ABC):
         '''
         pass
 
+# The reason this is not just a function is to allow for finite size methods that need to precompute data from the coil
+# such as a RMF method
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class FiniteSizeMethod(ABC):
+            
     @abstractmethod
-    def radial_vector(self, s, method : Literal['frenet_serret', 'centroid', 'rotated_from_centroid'], **kwargs):
+    def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
+        '''
+        Compute the radial vector along the coil as a function of arc length
+
+        Parameters
+        ----------
+        coil : Coil
+            Coil object
+        s : jnp.ndarray
+            Arc length(s) along the coil
+        Returns
+        -------
+        jnp.ndarray [..., 3]
+            Radial vector(s) along the coil
+        '''
+        pass
+
+    @abstractmethod
+    def compute_finite_size_frame(self, coil : Coil, s : jnp.ndarray):
+        '''
+        Compute the finite size frame along the coil as a function of arc length
+
+        Parameters
+        ----------
+        coil : Coil
+            Coil object
+        s : jnp.ndarray
+            Arc length(s) along the coil
+        Returns
+        -------
+        jnp.ndarray [..., 2, 3]
+            Finite size vector(s) along the coil
+        '''        
+        pass
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class FiniteSizeCoil():
+    coil : Coil
+    finite_size_method : FiniteSizeMethod
+
+    def position(self, s):
+        '''
+        Position along the coil as a function of arc length
+        Forwards the base coil
+        Parameters
+        ----------
+        s : jnp.ndarray
+            Arc length(s) along the coil
+        Returns
+        -------
+        jnp.ndarray
+            Cartesian position(s) along the coil
+        '''
+        return self.coil.position(s)
+    
+    def tangent(self, s):
+        '''
+        Tangent vector along the coil as a function of arc length
+        Forwards the base coil  
+        Parameters
+        ----------
+        s : jnp.ndarray
+            Arc length(s) along the coil
+        Returns
+        -------
+        jnp.ndarray
+            Tangent vector(s) along the coil
+        '''
+        return self.coil.tangent(s)
+    
+    def centre(self):
+        '''
+        Centre of the coil
+        Forwards the base coil  
+        Returns
+        -------
+        jnp.ndarray (3,)
+            Centre of the coil
+        '''
+        return self.coil.centre()    
+
+    def radial_vector(self, s):
         '''
         Radial vector along the coil as a function of arc length
+
+        Uses the FiniteSizeMethod to compute the radial vector
+        Uses the finite size method to compute the radial vector
 
         Parameters
         ----------
@@ -69,12 +159,12 @@ class Coil(ABC):
         jnp.ndarray [..., 3]
             Radial vector(s) along the coil
         '''
-        raise NotImplementedError("Radial vector method not implemented for base Coil class.")
+        return _compute_radial_vector(self.coil, self.finite_size_method, s)
 
-    @abstractmethod
-    def finite_size_frame(self, s, method : Literal['frenet_serret', 'centroid', 'rotated_from_centroid'], **kwargs):
+    def finite_size_frame(self, s):
         '''
         Finite size frame along the coil as a function of arc length
+        Uses the finite size method to compute the finite size frame.
 
         Parameters
         ----------
@@ -84,106 +174,330 @@ class Coil(ABC):
         -------
         jnp.ndarray [..., 2, 3]
             Finite size vector(s) along the coil
-        '''        
-        raise NotImplementedError("Finite size frame method not implemented for base Coil class.")
+        '''
+        return _compute_finite_size_frame(self.coil, self.finite_size_method, s)
     
-    @abstractmethod
-    def finite_size(self, s, width_radial, width_tangent, method : Literal['frenet_serret', 'centroid', 'rotated_from_centroid'], **kwargs):
+    
+    def finite_size(self, s, width_radial : float, width_phi : float):
         '''
         Finite size along the coil as a function of arc length
+        Uses the finite size method to compute the finite size.
+
         Parameters
         ----------
         s : jnp.ndarray
             Arc length(s) along the coil
-        width_0 : float
+        width_radial : float
             Width in the first finite size direction
-        width_1 : float
+        width_phi : float
             Width in the second finite size direction
-        method : Literal['frenet_serret', 'centroid', 'rmf', 'rotated_from_centroid']
-            Method to compute the finite size frame
-        **kwargs : dict
-            Additional arguments for the finite size frame method
             
         Returns
         -------
         jnp.ndarray [..., 4, 3]
             Finite size vector(s) along the coil
         '''
-        raise NotImplementedError("Finite size frame method not implemented for base Coil class.")
+        return _compute_finite_size(self.coil, self.finite_size_method, s, width_radial, width_phi)
+    
+@jax.jit
+def _compute_finite_size(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray, width_radial : float, width_phi : float):
+    '''
+    Compute finite size along the coil as a function of arc length
+    Uses the finite size method to compute the finite size.
 
+    Parameters
+    ----------
+    coil : Coil
+        Coil object
+    finitesizemethod : FiniteSizeMethod
+        Finite size method object
+    s : jnp.ndarray
+        Arc length(s) along the coil
+    width_radial : float
+        Width in the first finite size direction
+    width_phi : float
+        Width in the second finite size direction   
+    Returns
+    -------
+    jnp.ndarray [..., 4, 3]
+        Finite size vector(s) along the coil
+    '''
+    location = coil.position(s)
+    frame    = finitesizemethod.compute_finite_size_frame(coil, s)
+    return _finite_size_from_data(location, frame, width_radial, width_phi)
 
+@jax.jit
+def _compute_radial_vector(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray):
+    '''
+    Compute radial vector along the coil as a function of arc length
+    Uses the finite size method to compute the radial vector.
 
-    # def finite_size_lines(self, width_0, width_1, n_per_line : int, method : Literal['frenet_serret', 'centroid', 'rmf', 'rotated_from_centroid'], **kwargs):
-    #     '''
-    #     Generate lines along the finite size of the coil
+    Parameters
+    ----------
+    coil : Coil
+        Coil object
+    finitesizemethod : FiniteSizeMethod     
+        Finite size method object
+    s : jnp.ndarray
+        Arc length(s) along the coil
+    Returns
+    -------
+    jnp.ndarray [..., 3]
+        Radial vector(s) along the coil
+    '''
+    return finitesizemethod.compute_radial_vector(coil, s)
 
-    #     Note that the rotation-minimized frame is not defined for a single s
+@jax.jit
+def _compute_finite_size_frame(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray):
+    '''
+    Compute finite size frame along the coil as a function of arc length
+    Uses the finite size method to compute the finite size frame.
 
-    #     '''
-    #     if method == "rmf":
-        
-        
-
-    def mesh_triangles(self, width_0, width_1, n_per_line : int, method : Literal['frenet_serret', 'centroid', 'rmf', 'rotated_from_centroid'], **kwargs):
-        '''
-        Generate triangular mesh of the finite size coil surface
-
-        '''
-        pass
-
+    Parameters
+    ----------
+    coil : Coil
+        Coil object
+    finitesizemethod : FiniteSizeMethod
+        Finite size method object
+    s : jnp.ndarray
+        Arc length(s) along the coil
+    Returns
+    -------
+    jnp.ndarray [..., 2, 3]
+    '''
+    return finitesizemethod.compute_finite_size_frame(coil, s)
 
 # ===================================================================================================================================================================================
-#                                                                           Finite Size
+#                                                                           Finite Size Utility Methods
 # ===================================================================================================================================================================================
+@jax.jit
 def _finite_size_from_data(location, frame, width_radial : float, width_phi : float):    
+    '''
+    Compute the finite size vertices from location, frame and widths. 
+    The frame is assumed to be orthonormal and its first index corresponds to the radial direction, second to the phi direction.
+
+    The finite size is in the following order:
+    v_0 : + radial, + phi
+    v_1 : - radial, + phi
+    v_2 : - radial, - phi
+    v_3 : + radial, - phi
+    
+
+    Parameters
+    ----------
+    location : jnp.ndarray [..., 3]
+        Location(s) along the coil
+    frame : jnp.ndarray [..., 2, 3]
+        Finite size frame(s) along the coil
+    width_radial : float
+        Width in the first finite size direction
+    width_phi : float
+        Width in the second finite size direction
+    Returns
+    -------
+    jnp.ndarray [..., 4, 3]
+        Finite size vertex locations along the coil
+    '''
     v_0  = location + width_radial * frame[..., 0, :] + width_phi * frame[..., 1, :] # ..., 3
     v_1  = location - width_radial * frame[..., 0, :] + width_phi * frame[..., 1, :] # ..., 3
-    v_2  = location + width_radial * frame[..., 0, :] - width_phi * frame[..., 1, :] # ..., 3 
-    v_3  = location - width_radial * frame[..., 0, :] - width_phi * frame[..., 1, :] # ..., 3
+    v_2  = location - width_radial * frame[..., 0, :] - width_phi * frame[..., 1, :] # ..., 3
+    v_3  = location + width_radial * frame[..., 0, :] - width_phi * frame[..., 1, :] # ..., 3 
     return jnp.stack([v_0, v_1, v_2, v_3], axis=-2) # ..., 4, 3
 
-
+@jax.jit
 def _frame_from_radial_vector(tangents, radial_vectors):
+    '''
+    Compute finite size frame from tangent and radial vector.
+
+    First finite size direction is radial direction, second is phi direction (perpendicular to both tangent and radial)
+    
+    Parameters
+    ----------
+    tangents : jnp.ndarray [..., 3]
+        Tangent vector(s) along the coil
+    radial_vectors : jnp.ndarray [..., 3]
+        Radial vector(s) along the coil 
+
+    Returns
+    -------
+    jnp.ndarray [..., 2, 3]
+        Finite size frame(s) along the coil
+    '''
     e_R_n   = radial_vectors / jnp.linalg.norm(radial_vectors, axis=-1, keepdims=True) # ..., 3
     e_phi_n = jnp.cross(tangents, e_R_n) # ..., 3
     e_phi_n = e_phi_n / jnp.linalg.norm(e_phi_n, axis=-1, keepdims=True) # ..., 3
     return jnp.stack([e_R_n, e_phi_n], axis=-2) # ..., 2, 3
 
-# =================================================================================================================================================================================
-#                                                                           Centroids
-# =================================================================================================================================================================================
+
+
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                                           Centroid
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class CentroidFrame(FiniteSizeMethod):
+    '''
+    Finite size method using centroid frame
+
+    Centroid frame is defined by the radial vector being the vector that is pointing from the coil centre to the coil position, projected onto the plane normal to the tangent    
+    '''
+
+    def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
+        return _compute_radial_vector_centroid(coil, s)
+
+    def compute_finite_size_frame(self, coil : Coil, s : jnp.ndarray):
+        return _compute_finite_size_frame_centroid(coil, s)
+
+@jax.jit
+def _compute_radial_vector_centroid(coil : Coil, s : jnp.ndarray):
+    '''
+    Compute radial vector along the coil as a function of arc length using centroid method
+    Uses the coils internal method to compute the radial vector (as it may be coil-type specific)
+    '''
+    return coil._radial_vector_centroid(s)
+
+@jax.jit
+def _compute_finite_size_frame_centroid(coil : Coil, s : jnp.ndarray):
+    '''
+    Compute finite size frame along the coil as a function of arc length using centroid method
+    Uses the coils internal method to compute the finite size frame (as it may be coil-type specific)
+    '''
+    return coil._finite_size_frame_centroid(s)
+
 
 @jax.jit
 def _radial_vector_centroid_from_data(coil_centre, positions, tangents):
+    '''
+    Compute the centroid radial vector from coil centre, position and tangent data
+    This is not always desired: discrete coils have discontinuous tangents and thus discontinuous radial vectors
+    Therefore, such a discrete coild should interpolate the radial vectors to have a smooth coil.
+    '''
     d_i       =  positions - coil_centre # ..., 3 - 3 = ..., 3
     e_R       = d_i - jnp.einsum("...j,...i,...i->...j", tangents, d_i, tangents) # ..., 3
     return e_R
 
-# =================================================================================================================================================================================
-#                                                                           RMF
-# =================================================================================================================================================================================
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                                           Frenet-Serret
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class FrenetSerretFrame(FiniteSizeMethod):    
+    '''
+    Finite size method using Frenet-Serret frame    
+    '''
+    def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
+        return _compute_radial_vector_frenet_serret(coil, s)
+    def compute_finite_size_frame(self, coil : Coil, s : jnp.ndarray):
+        return _compute_finite_size_frame_frenet_serret(coil, s)
+    
+@jax.jit
+def _compute_radial_vector_frenet_serret(coil : Coil, s : jnp.ndarray):
+    '''
+    Compute radial vector along the coil as a function of arc length using Frenet-Serret method
+    Uses the coils internal method to compute the radial vector (as it may be coil-type specific or not even exist)
+    '''
+    return coil._radial_vector_frenet_serret(s)
 
-def _angle_axis_to_matrix(axis, angle):
-    """
-    Convert an angle-axis representation to a 3x3 rotation matrix.
+@jax.jit
+def _compute_finite_size_frame_frenet_serret(coil : Coil, s : jnp.ndarray):
+    '''
+    Compute finite size frame along the coil as a function of arc length using Frenet-Serret method
+    Uses the coils internal method to compute the finite size frame (as it may be coil-type specific or not even exist)
+    '''
+    return coil._finite_size_frame_frenet_serret(s)
 
-    axis: shape (3,)
-    angle: scalar
-    """
-    axis = axis / jnp.linalg.norm(axis)
-    ux, uy, uz = axis
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                                           Radial Vector Frame
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-    K = jnp.array([
-        [0,    -uz,   uy],
-        [uz,    0,   -ux],
-        [-uy,  ux,    0]
-    ])
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class RadialVectorFrame(FiniteSizeMethod):
+    '''
+    Finite size method using precomputed radial vectors
+    It interpolates in between the radial vectors to compute the radial vector and finite size frame at arbitrary locations along the coil.
+    The radial vectors are assumed to be given at uniform arc length intervals (endpoint not included).
+    '''
+    radial_vectors_i : jnp.ndarray
 
-    I = jnp.eye(3)
-    R = I + jnp.sin(angle) * K + (1 - jnp.cos(angle)) * (K @ K)
-    return R
+    @classmethod 
+    def from_radial_vectors(cls, radial_vectors : jnp.ndarray):        
+        return cls(radial_vectors_i = radial_vectors)
+        
+    def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
+        # Coil was already used to compute radial_vectors_i
+        # This assumes that this class was instantiated using from_coil with the same coil
+        return _interpolate_radial_vectors(self.radial_vectors_i, s)
+    def compute_finite_size_frame(self, coil : Coil, s : jnp.ndarray):        
+        return _interpolated_frame_from_radial_vectors(coil, self.radial_vectors_i, s)
 
-_angle_axis_to_matrix_vmap = jax.vmap(_angle_axis_to_matrix, in_axes=(0, 0))
+    
+@jax.jit
+def _interpolate_radial_vectors(radial_vectors_rmf, s):
+    '''
+    Interpolate radial vectors at arc length s.
+    Uses modulo arithmic to define s > 1.0.
+    '''
+    return interpolate_array_modulo_broadcasted(radial_vectors_rmf, s)
+
+@jax.jit
+def _interpolated_frame_from_radial_vectors(coil : Coil, radial_vectors_rmf, s : jnp.ndarray):
+    '''
+    Interpolate the frame from radial vectors at arc length s.
+    Uses modulo arithmic to define s > 1.0.
+    '''
+    radial_vector = _interpolate_radial_vectors(radial_vectors_rmf, s)
+    tangents      = coil.tangent(s)
+    return _frame_from_radial_vector(tangents, radial_vector)
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                                           Rotation Minimized Frame
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class RotationMinimizedFrame(RadialVectorFrame):
+    '''
+    Finite size method using rotation minimized frame. This is a subclass of RadialVectorFrame.
+    The radial vectors are computed using the rotation minimizing frame algorithm.
+    '''
+    @classmethod 
+    def from_coil(cls, coil : Coil, number_of_rmf_samples : int):
+        radial_vector = _compute_full_rmf(coil, number_of_rmf_samples)
+        return cls(radial_vectors_i=radial_vector)
+ 
+
+@partial(jax.jit, static_argnums=(1,))
+def _compute_full_rmf(coil : Coil, number_of_rmf_samples : int):
+    '''
+    Compute the full rotation minimizing frame along the coil from the coil object.
+    The radial vectors are computed at uniform arc length intervals (endpoint not included).
+    See [1] for computation details.
+
+    Parameters:
+    ----------
+    coil : Coil
+        Coil object
+    number_of_rmf_samples : int
+        Number of samples to compute the RMF at (uniform arc length intervals, endpoint not included
+    Returns
+    -------
+    jnp.ndarray (number_of_rmf_samples, 3)
+        Rotation minimizing frame along the coil
+    
+    References
+    ----------
+    [1] Wang, Wenping, et al. "Computation of rotation minimizing frames." ACM Transactions on Graphics (TOG) 27.1 (2008): 1-18.
+
+
+    '''
+    s_rmf        = jnp.linspace(0.0,1.0, number_of_rmf_samples, endpoint=False)
+    positions_rmf = coil.position(s_rmf)
+    tangents_rmf  = coil.tangent(s_rmf)
+    coil_centre   = coil.centre()
+    return _rmf_radial_vector_from_data(coil_centre, positions_rmf, tangents_rmf)
+
 
 @jax.jit
 def _rmf_radial_vector_from_data(coil_centre, positions, tangents):
@@ -256,6 +570,28 @@ def _rmf_radial_vector_from_data(coil_centre, positions, tangents):
 
     return result_new
 
+
+def _angle_axis_to_matrix(axis, angle):
+    """
+    Convert an angle-axis representation to a 3x3 rotation matrix.
+
+    axis: shape (3,)
+    angle: scalar
+    """
+    axis = axis / jnp.linalg.norm(axis)
+    ux, uy, uz = axis
+
+    K = jnp.array([
+        [0,    -uz,   uy],
+        [uz,    0,   -ux],
+        [-uy,  ux,    0]
+    ])
+
+    I = jnp.eye(3)
+    R = I + jnp.sin(angle) * K + (1 - jnp.cos(angle)) * (K @ K)
+    return R
+
+_angle_axis_to_matrix_vmap = jax.vmap(_angle_axis_to_matrix, in_axes=(0, 0))
 
 # ===================================================================================================================================================================================
 #                                                                           Convenience functions

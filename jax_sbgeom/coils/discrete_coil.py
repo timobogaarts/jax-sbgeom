@@ -73,78 +73,19 @@ class DiscreteCoil(Coil):
             Centre of the coil
         '''
         return self._centre_i
+
+    def _radial_vector_centroid(self, s):
+        return _discrete_coil_radial_vector_centroid(self, s)
     
-        
-    def radial_vector(self, s, method : Literal['frenet_serret', 'centroid', 'rmf','rotated_from_centroid'], **kwargs):
-        '''
-        Radial vector along the coil as a function of arc length
-
-        Parameters
-        ----------
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        method : Literal['frenet_serret', 'centroid', 'rmf']
-            Method to compute the radial vector
-        **kwargs :
-            Additional arguments for the radial vector computation.
-                For 'rmf' method: number_of_rmf_samples used for interpolation
-        Returns
-        -------
-        jnp.ndarray [..., 3]
-            Radial vector(s) along the coil
-        '''
-        if method == "centroid":    
-            return _discrete_coil_radial_vector_centroid(self, s)
-        elif method == "frenet_serret":
-            return _discrete_coil_radial_vector_frenet_serret(self, s)
-        elif method == "rmf":
-            warnings.warn("A rotation-minimized-frame is only defined over the entire coil. This routine prcomputes it for the entire coil and interpolates it. This may be inefficient if only a few s values are requested.", RuntimeWarning)
-            return _discrete_coil_radial_vector_rmf(self, s, number_of_rmf_samples=kwargs.get("number_of_rmf_samples", 1000))
-        else:
-            raise NotImplementedError(f"Radial vector method '{method}' not implemented for DiscreteCoil.")
+    def _finite_size_frame_centroid(self, s):
+        return _discrete_coil_finite_size_frame_centroid(self, s)
     
-    def finite_size_frame(self, s, method : Literal['frenet_serret', 'centroid', 'rotated_from_centroid'], **kwargs):
-        '''
-        Finite size frame along the coil as a function of arc length
+    def _radial_vector_frenet_serret(self, s):
+        return _discrete_coil_radial_vector_frenet_serret(self, s)
 
-        Parameters
-        ----------
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        method : Literal['frenet_serret', 'centroid', 'rmf']
-            Method to compute the finite size frame
-        **kwargs :
-            Additional arguments for the finite size frame computation.
-                For 'rmf' method: number_of_rmf_samples used for interpolation
-        Returns
-        -------
-        jnp.ndarray [..., 2, 3]
-            Finite size frame vector(s) along the coil
-        '''
-        return _discrete_coil_finite_size_frame(self, s, method, **kwargs)
-         
-    def finite_size(self, s, width_radial, width_tangent, method, **kwargs):
-        '''
-        Finite size along the coil as a function of arc length
+    def _finite_size_frame_frenet_serret(self, s):
+        return _discrete_coil_finite_size_frame_frenet_serret(self, s)
 
-        Parameters
-        ----------
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        width_radial : float
-            Width in the radial direction
-        width_tangent : float
-            Width in the tangent direction
-        method : Literal['frenet_serret', 'centroid', 'rotated_from_centroid']
-            Method to compute the finite size frame
-        **kwargs :
-            Additional arguments for the finite size frame computation. Used for the number of rmf samples for the full coil when the method is rmf. Default is 1000.
-        Returns
-        -------
-        jnp.ndarray [..., 4, 3]
-            Finite size vector(s) along the coil
-        '''
-        return _discrete_coil_finite_size(self, s, width_radial, width_tangent, method, **kwargs)
     
 # ===================================================================================================================================================================================
 #                                                                           Implementation
@@ -310,143 +251,3 @@ def _discrete_coil_finite_size_frame_frenet_serret(discrete_coil : DiscreteCoil,
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #                           RMF
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-@partial(jax.jit, static_argnums = (1,))
-def _discrete_coil_compute_full_coil_rmf(discrete_coil : DiscreteCoil, number_of_samples : int):
-    '''
-    Internal function to compute the full rotation minimized frame along the discrete coil
-
-    Parameters
-    ----------
-    discrete_coil : DiscreteCoil
-        Discrete coil object
-    number_of_samples : int
-        Number of samples to use for precomputing the RMF frame
-    Returns
-    -------
-    jnp.ndarray (number_of_samples, 3)
-        Rotation minimized frame along the coil
-    '''
-    s_samples = jnp.linspace(0.0, 1.0, number_of_samples, endpoint=False)  # (n_s,)
-    positions    = _discrete_coil_position(discrete_coil, s_samples)  # (n_s, 3)
-    tangents     = _discrete_coil_tangent(discrete_coil, s_samples)  # (n_s, 3)
-    coil_centre = discrete_coil._centre_i # (3,)    
-    return _rmf_radial_vector_from_data(coil_centre, positions, tangents) # (n_s, 3)
-
-
-@partial(jax.jit, static_argnums = (2,))
-def _discrete_coil_radial_vector_rmf(discrete_coil : DiscreteCoil, s, number_of_rmf_samples : int):    
-    '''
-    Internal function to find the rmf radial vector at arc length s
-    Note that a rotation minimized frame is only defined over the entire coil. This routine prcomputes it for the entire coil and interpolates it. 
-    This may be inefficient if only a few s values are requested. 
-
-    This supports vectorized s in any dimension.
-
-    Parameters
-    ----------
-    discrete_coil : DiscreteCoil
-        Discrete coil object
-    s : jnp.ndarray 
-        Arc length(s) along the coil    
-    number_of_rmf_samples : int
-        Number of samples to use for precomputing the RMF frame
-    Returns
-    -------
-    jnp.ndarray [s.shape, 3]
-        Radial vector(s) along the coil
-    '''
-    rmf_frame = _discrete_coil_compute_full_coil_rmf(discrete_coil, number_of_rmf_samples)  # (n_s, 3, 3)    
-    return interpolate_array_modulo_broadcasted(rmf_frame, s)  # (..., 3, 3)
-
-
-@partial(jax.jit, static_argnums = (2,))
-def _discrete_coil_finite_size_frame_rmf(discrete_coil : DiscreteCoil, s, number_of_rmf_samples : int):
-    '''
-    Internal function to find the rmf finite size frame at arc length s 
-
-    Note that a rotation minimized frame is only defined over the entire coil. This routine prcomputes it for the entire coil and interpolates it. 
-    This may be inefficient if only a few s values are requested.
-
-    Parameters
-    ----------
-    discrete_coil : DiscreteCoil
-        Discrete coil object
-    s : jnp.ndarray
-        Arc length(s) along the coil    
-    number_of_rmf_samples : int
-        Number of samples to use for precomputing the RMF frame
-    Returns
-    -------
-    jnp.ndarray [..., 2, 3]
-        Finite size frame(s) along the coil
-    '''
-    radial_vectors = _discrete_coil_radial_vector_rmf(discrete_coil, s, number_of_rmf_samples)
-    tangents       = _discrete_coil_tangent(discrete_coil, s)    
-    return _frame_from_radial_vector(tangents, radial_vectors)
-
-
-
-# ===================================================================================================================================================================================
-#                                                                           Convenience functions
-# ===================================================================================================================================================================================
-def _discrete_coil_finite_size_frame(discrete_coil : DiscreteCoil, s, method : str, **kwargs):        
-    '''
-    Convenience function to compute finite size frame at a location s along the discrete coil, using specified method
-    Parameters
-    ----------
-    discrete_coil : DiscreteCoil    
-        Discrete coil object
-    s : jnp.ndarray 
-        Arc length(s) along the coil
-    method : str
-        Method to compute the finite size frame. One of 'frenet_serret', 'centroid', 'rmf'
-    **kwargs : dict
-        Additional arguments for the finite size frame computation.
-        Used for the number of rmf samples for the full coil when the method is rmf. Default is 1000.
-    Returns
-    -------
-    jnp.ndarray [..., 2, 3]
-        Finite size frame(s) along the coil
-    '''
-    
-    # This *cannot* be jitted because of the **kwargs
-    if method == "centroid":    
-        return _discrete_coil_finite_size_frame_centroid(discrete_coil, s)
-    elif method == "frenet_serret":
-        return _discrete_coil_finite_size_frame_frenet_serret(discrete_coil, s)
-    elif method == "rmf":
-        return _discrete_coil_finite_size_frame_rmf(discrete_coil, s, kwargs.get("number_of_rmf_samples", 1000))
-    else:
-        raise NotImplementedError(f"Finite size method '{method}' not implemented for _discrete_coil_finite_size_frame")
-
-def _discrete_coil_finite_size(discrete_coil : DiscreteCoil, s, width_radial, width_tangent, method : str, **kwargs):
-    '''
-    Convenience function to compute finite size at a location s along the discrete coil, using specified method 
-
-    Parameters
-    ----------
-    discrete_coil : DiscreteCoil    
-        Discrete coil object
-    s : jnp.ndarray 
-        Arc length(s) along the coil
-    width_radial : float
-        Width in the radial direction
-    width_tangent : float
-        Width in the tangent direction
-    method : str
-        Method to compute the finite size frame. One of 'frenet_serret', 'centroid', 'rmf'
-    **kwargs : dict 
-        Additional arguments for the finite size frame computation.
-        Used for the number of rmf samples for the full coil when the method is rmf. Default is 1000.
-    Returns
-    -------
-    jnp.ndarray [..., 4, 3]
-        Finite size vector(s) along the coil
-    '''
-    finite_size_frame = _discrete_coil_finite_size_frame(discrete_coil, s, method, **kwargs)    
-    location          = _discrete_coil_position(discrete_coil, s)                  # ..., 3
-    return _finite_size_from_data(location, finite_size_frame, width_radial, width_tangent) # ..., 4, 3
-
-
-    

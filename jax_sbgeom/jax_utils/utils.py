@@ -39,6 +39,7 @@ def interpolate_array_modulo(x_interp, s):
     x1 = x_interp[i1 % nsurf]
     return (1 - ds) * x0 + ds * x1
 
+
 def interpolate_array_modulo_broadcasted(x_interp, s):
     nsurf = x_interp.shape[0]
     i0, i1, ds   = interpolate_fractions_modulo(s, nsurf)

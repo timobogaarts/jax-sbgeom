@@ -9,12 +9,13 @@ from functools import partial
 
 import pytest
 from functools import lru_cache
+
 jax.config.update("jax_enable_x64", True)
 
 
 
 def _bool_check_coils_vector():
-    return False
+    return True
 
 def _check_single_vectorized_internal(fun):
     s_0 = 0.1
@@ -98,7 +99,20 @@ def _switch_finite_size(coil_sbgeom, width_0, width_1, method, ns, **kwargs):
         return coil_sbgeom.Finite_Size_Lines_RMF(width_1, width_0, ns)
     else:
         raise NotImplementedError(f"Finite size method '{method}' not implemented for SBGeom discrete coils.")
-        
+
+def _switch_finite_size_cjax(coil_jax, width_0, width_1, method, ns, **kwargs):
+    if method == "centroid":
+        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coil_jax, jsb.coils.base_coil.CentroidFrame())
+        return finitesize_coil.finite_size(_sampling_s_finite_size(ns), width_0, width_1)
+    elif method == "frenet_serret":
+        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coil_jax, jsb.coils.base_coil.FrenetSerretFrame())
+        return finitesize_coil.finite_size(_sampling_s_finite_size(ns), width_0, width_1)
+    elif method == "rmf":
+        number_of_rmf_samples = kwargs.get("number_of_rmf_samples", 1000)
+        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coil_jax, jsb.coils.base_coil.RotationMinimizedFrame.from_coil(coil_jax, number_of_rmf_samples))
+        return finitesize_coil.finite_size(_sampling_s_finite_size(ns), width_0, width_1)
+    else:
+        raise NotImplementedError(f"Finite size method '{method}' not implemented for SBGeom discrete coils.")
     
 def _check_finite_size(coilset_jsb, coilset_sbgeom, method, rtol = 1e-12, atol = 1e-12, **kwargs):
     for i in range(coilset_sbgeom.Number_of_Coils()):
@@ -107,7 +121,7 @@ def _check_finite_size(coilset_jsb, coilset_sbgeom, method, rtol = 1e-12, atol =
         s_samples = _sampling_s_finite_size()
         width_0 = 0.3
         width_1 = 0.5
-        jsb_lines    = coil_jsb.finite_size(s_samples, width_0, width_1, method= method, **kwargs)
+        jsb_lines    = _switch_finite_size_cjax(coil_jsb, width_0, width_1, method, ns = s_samples.shape[0], **kwargs)
         sbgeom_lines = _switch_finite_size(coil_sbgeom, width_0, width_1, method, ns = s_samples.shape[0])
 
         jsb_comparison = jnp.moveaxis(jsb_lines, 1,0).reshape(-1,3)
@@ -130,6 +144,17 @@ def test_discrete_coil_vectorized_position(_get_all_discrete_coils):
     
     _check_single_vectorized(coilset_jaxsbgeom[0].position)
     _check_single_vectorized(coilset_jaxsbgeom[0].tangent)
-    _check_single_vectorized(lambda s: coilset_jaxsbgeom[0].finite_size(s, 0.3, 0.5, method="centroid"))
-    _check_single_vectorized(lambda s: coilset_jaxsbgeom[0].finite_size(s, 0.3, 0.5, method="frenet_serret"))
-    _check_single_vectorized(lambda s: coilset_jaxsbgeom[0].finite_size(s, 0.3, 0.5, method="rmf", number_of_rmf_samples=1000))
+
+    def centroid(s):
+        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coilset_jaxsbgeom[0], jsb.coils.base_coil.CentroidFrame())
+        return finitesize_coil.finite_size(s, 0.3, 0.5)
+    _check_single_vectorized(centroid)
+    def frenet_serret(s):
+        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coilset_jaxsbgeom[0], jsb.coils.base_coil.FrenetSerretFrame())
+        return finitesize_coil.finite_size(s, 0.3, 0.5)
+    _check_single_vectorized(frenet_serret)
+    def rmf(s):
+        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coilset_jaxsbgeom[0], jsb.coils.base_coil.RotationMinimizedFrame.from_coil(coilset_jaxsbgeom[0], 1000))
+        return finitesize_coil.finite_size(s, 0.3, 0.5)
+    _check_single_vectorized(rmf)
+    
