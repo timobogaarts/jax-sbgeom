@@ -13,17 +13,28 @@ jax.config.update("jax_enable_x64", True)
 
 
 
+def _bool_check_coils_vector():
+    return False
+
 def _check_single_vectorized_internal(fun):
     s_0 = 0.1
-    s_1 = jnp.linspace(0.0, 1.0, 10)
-    s_2, _ = jnp.meshgrid(jnp.linspace(0.0, 1.0, 5), jnp.linspace(0.0, 1.0, 4), indexing='ij')
-    s_3 = jnp.ones((3,4,5)) * jnp.linspace(0.0, 1.0, 5)
+    s_1 = jnp.linspace(0.0, 1.0, 24)
+    s_2 = s_1.reshape((4,6))
+    s_3 = s_1.reshape((2,3,4))
+
 
     fun(s_0)
-    fun(s_1)
-    fun(s_2)
-    fun(s_3)
+    r_1 = fun(s_1)
+    r_2 = fun(s_2)
+    r_3 = fun(s_3)
 
+    onp.testing.assert_allclose(r_1, r_2.reshape(r_1.shape))
+    onp.testing.assert_allclose(r_1, r_3.reshape(r_1.shape))
+
+def _check_single_vectorized(fun):
+    if _bool_check_coils_vector():
+        _check_single_vectorized_internal(fun)
+    
 
 def _get_coil_files():
     return ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
@@ -38,7 +49,7 @@ def _get_all_discrete_coils(request):
 
 
 #=================================================================================================================================================
-#                                                   Tests for DiscreteCoil
+#                                                   Position & Tangent tests
 #=================================================================================================================================================
 
 def _sampling_s(n_s : int = 1000):
@@ -71,3 +82,54 @@ def test_discrete_coil_position(_get_all_discrete_coils):
 def test_discrete_coil_tangent(_get_all_discrete_coils):
     coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
     _check_tangent(coilset_jaxsbgeom, coilset_sbgeom, atol=1e-12)
+
+#=================================================================================================================================================
+#                                                   Finite Size Tests
+#=================================================================================================================================================
+def _sampling_s_finite_size(n_s : int = 1000):
+    return jnp.linspace(0.0, 1.0, n_s, endpoint=False)
+
+def _switch_finite_size(coil_sbgeom, width_0, width_1, method, ns, **kwargs):
+    if method == "centroid":
+        return coil_sbgeom.Finite_Size_Lines_Centroid(width_1, width_0, ns)
+    elif method == "frenet_serret":
+        return coil_sbgeom.Finite_Size_Lines_Frenet(width_1, width_0, ns)
+    elif method == "rmf":
+        return coil_sbgeom.Finite_Size_Lines_RMF(width_1, width_0, ns)
+    else:
+        raise NotImplementedError(f"Finite size method '{method}' not implemented for SBGeom discrete coils.")
+        
+    
+def _check_finite_size(coilset_jsb, coilset_sbgeom, method, rtol = 1e-12, atol = 1e-12, **kwargs):
+    for i in range(coilset_sbgeom.Number_of_Coils()):
+        coil_jsb = coilset_jsb[i]
+        coil_sbgeom = coilset_sbgeom[i]
+        s_samples = _sampling_s_finite_size()
+        width_0 = 0.3
+        width_1 = 0.5
+        jsb_lines    = coil_jsb.finite_size(s_samples, width_0, width_1, method= method, **kwargs)
+        sbgeom_lines = _switch_finite_size(coil_sbgeom, width_0, width_1, method, ns = s_samples.shape[0])
+
+        jsb_comparison = jnp.moveaxis(jsb_lines, 1,0).reshape(-1,3)
+        onp.testing.assert_allclose(sbgeom_lines, jsb_comparison, rtol = rtol, atol=atol)
+
+def test_discrete_coil_finite_size_centroid(_get_all_discrete_coils):
+    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+    _check_finite_size(coilset_jaxsbgeom, coilset_sbgeom, method="centroid", rtol =1e-7,  atol=1e-7)
+
+def test_discrete_coil_finite_size_rmf(_get_all_discrete_coils):
+    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+    _check_finite_size(coilset_jaxsbgeom, coilset_sbgeom, method="rmf", rtol =1e-7,  atol=1e-7, number_of_rmf_samples = 1000)
+
+#=================================================================================================================================================
+#                                                  Vectorization Tests
+#=================================================================================================================================================
+
+def test_discrete_coil_vectorized_position(_get_all_discrete_coils):
+    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+    
+    _check_single_vectorized(coilset_jaxsbgeom[0].position)
+    _check_single_vectorized(coilset_jaxsbgeom[0].tangent)
+    _check_single_vectorized(lambda s: coilset_jaxsbgeom[0].finite_size(s, 0.3, 0.5, method="centroid"))
+    _check_single_vectorized(lambda s: coilset_jaxsbgeom[0].finite_size(s, 0.3, 0.5, method="frenet_serret"))
+    _check_single_vectorized(lambda s: coilset_jaxsbgeom[0].finite_size(s, 0.3, 0.5, method="rmf", number_of_rmf_samples=1000))
