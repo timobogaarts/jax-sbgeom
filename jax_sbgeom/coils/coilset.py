@@ -50,7 +50,7 @@ def coilset_position_different_s(coilset : CoilSet, s):
 def coilset_tangent_different_s(coilset : CoilSet, s):
     return _coil_tangent_vmap_different_s(coilset.coils, s)
 
-_coil_finite_size_vmap_same_s = jax.vmap(lambda coil, s: coil.finite_size_method.position(coil, s), in_axes=(0, None))
+### TODO FINITE SIZE VECTORIZATION!
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
