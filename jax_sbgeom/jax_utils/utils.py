@@ -41,10 +41,10 @@ def interpolate_array_modulo(x_interp, s):
 
 
 def interpolate_array_modulo_broadcasted(x_interp, s):
-    nsurf = x_interp.shape[0]
+    nsurf = x_interp.shape[-2]
     i0, i1, ds   = interpolate_fractions_modulo(s, nsurf)
-    x0 = x_interp[i0 % nsurf] # s_shape, something
-    x1 = x_interp[i1 % nsurf] # s_shape, something
+    x0 = x_interp[..., i0 % nsurf, :] # s_shape, something
+    x1 = x_interp[..., i1 % nsurf, :] # s_shape, something
 
     return (1 - ds[..., None]) * x0 + ds[..., None] * x1
 

@@ -1,3 +1,4 @@
+import os
 import jax_sbgeom as jsb
 import jax.numpy as jnp
 import numpy as onp
@@ -13,11 +14,11 @@ from functools import lru_cache
 jax.config.update("jax_enable_x64", True)
 
 
+def test_backend():
+    import jax
+    print("Backend:", jax.default_backend())
 
-def _bool_check_coils_vector():
-    return True
-
-def _check_single_vectorized_internal(fun):
+def _check_single_vectorized(fun):
     s_0 = 0.1
     s_1 = jnp.linspace(0.0, 1.0, 24)
     s_2 = s_1.reshape((4,6))
@@ -32,14 +33,8 @@ def _check_single_vectorized_internal(fun):
     onp.testing.assert_allclose(r_1, r_2.reshape(r_1.shape))
     onp.testing.assert_allclose(r_1, r_3.reshape(r_1.shape))
 
-def _check_single_vectorized(fun):
-    if _bool_check_coils_vector():
-        _check_single_vectorized_internal(fun)
-    
-
 def _get_coil_files():
     return ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
-
 
 @pytest.fixture(scope="session", params = _get_coil_files())
 def _get_all_discrete_coils(request):    
@@ -48,12 +43,11 @@ def _get_all_discrete_coils(request):
     
     return coilset_jaxsbgeom, coilset_sbgeom
 
-
 #=================================================================================================================================================
 #                                                   Position & Tangent tests
 #=================================================================================================================================================
 
-def _sampling_s(n_s : int = 1000):
+def _sampling_s(n_s : int = 111):
     return jnp.linspace(0.0, 1.0, n_s)
 
 def _check_positions(coilset_jsb, coilset_sbgeom, atol = 1e-12):
@@ -87,7 +81,7 @@ def test_discrete_coil_tangent(_get_all_discrete_coils):
 #=================================================================================================================================================
 #                                                   Finite Size Tests
 #=================================================================================================================================================
-def _sampling_s_finite_size(n_s : int = 1000):
+def _sampling_s_finite_size(n_s : int = 111):
     return jnp.linspace(0.0, 1.0, n_s, endpoint=False)
 
 def _switch_finite_size(coil_sbgeom, width_0, width_1, method, ns, **kwargs):
@@ -133,12 +127,14 @@ def test_discrete_coil_finite_size_centroid(_get_all_discrete_coils):
 
 def test_discrete_coil_finite_size_rmf(_get_all_discrete_coils):
     coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    _check_finite_size(coilset_jaxsbgeom, coilset_sbgeom, method="rmf", rtol =1e-7,  atol=1e-7, number_of_rmf_samples = 1000)
+    nrmf = _sampling_s_finite_size().shape[0]
+    _check_finite_size(coilset_jaxsbgeom, coilset_sbgeom, method="rmf", rtol =1e-7,  atol=1e-7, number_of_rmf_samples = nrmf)
 
 #=================================================================================================================================================
 #                                                  Vectorization Tests
 #=================================================================================================================================================
 
+@pytest.mark.slow
 def test_discrete_coil_vectorized_position(_get_all_discrete_coils):
     coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
     

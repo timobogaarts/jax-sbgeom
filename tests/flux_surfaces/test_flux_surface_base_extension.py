@@ -3,20 +3,13 @@ import jax.numpy as jnp
 import numpy as onp
 import StellBlanket.SBGeom as SBGeom 
 import jax
+jax.config.update("jax_enable_x64", True)
+
 import time
 from functools import partial
-
 import pytest
 from tests.flux_surfaces.test_flux_surface_base import _get_files, _check_vectorized
 
-jax.config.update("jax_enable_x64", True)
-
-cached= True
-if cached:
-    jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
-    jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
-    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
-    jax.config.update("jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir")
 
 
 @pytest.fixture(scope="session", params = _get_files())
@@ -72,21 +65,22 @@ def _extended_1d_sampling_grid_stop_1(fs_jax : jsb.flux_surfaces.FluxSurface, n_
 #                                                                          Positions Normal Extended
 # ===================================================================================================================================================================================
 from tests.flux_surfaces.test_flux_surface_base import _check_position_both, _check_normals_both, _check_principal_curvatures_both
-def test_normal_extension_position(_get_normal_extended_flux_surfaces, n_repetitions=1):
+def test_normal_extension_position(_get_normal_extended_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_flux_surfaces
-    _check_position_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions)
+    _check_position_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid)
 
-def test_normal_extension_normals(_get_normal_extended_flux_surfaces, n_repetitions=1):
+def test_normal_extension_normals(_get_normal_extended_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_flux_surfaces
     # SBGeom doesn't return normals in the extended region, so only test up to s=1 (that should be the same)
-    _check_normals_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid_stop_1, n_repetitions=n_repetitions)
+    _check_normals_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid_stop_1)
    
 
-def test_normal_extension_principal_curvatures(_get_normal_extended_flux_surfaces, n_repetitions=1):
+def test_normal_extension_principal_curvatures(_get_normal_extended_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_flux_surfaces
     
-    _check_principal_curvatures_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions)
+    _check_principal_curvatures_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid)
 
+@pytest.mark.slow
 def test_normal_extension_vectorization(_get_normal_extended_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_flux_surfaces
     _check_vectorized(fs_jax.cartesian_position)
@@ -96,10 +90,11 @@ def test_normal_extension_vectorization(_get_normal_extended_flux_surfaces):
 # ===================================================================================================================================================================================
 #                                                                          Positions Normal No Phi
 # ===================================================================================================================================================================================
-def test_normal_no_phi_extension_position(_get_normal_extended_no_phi_flux_surfaces, n_repetitions=1):
+def test_normal_no_phi_extension_position(_get_normal_extended_no_phi_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_no_phi_flux_surfaces
-    _check_position_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions)
+    _check_position_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid)
 
+@pytest.mark.slow
 def test_normal_extension_no_phi_vectorization(_get_normal_extended_no_phi_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_no_phi_flux_surfaces
     _check_vectorized(fs_jax.cartesian_position)
@@ -110,20 +105,21 @@ def test_normal_extension_no_phi_vectorization(_get_normal_extended_no_phi_flux_
 #                                                                          Positions Normal Constant Phi
 # ===================================================================================================================================================================================
 
-def test_normal_extension_constant_phi_position(_get_normal_extended_constant_phi_flux_surfaces, n_repetitions=1):
+def test_normal_extension_constant_phi_position(_get_normal_extended_constant_phi_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_constant_phi_flux_surfaces
-    _check_position_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions, atol = 1e-6)
+    _check_position_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, atol = 1e-6)
 
-def test_normal_extension_constant_phi_normals(_get_normal_extended_constant_phi_flux_surfaces, n_repetitions=1):
+def test_normal_extension_constant_phi_normals(_get_normal_extended_constant_phi_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_constant_phi_flux_surfaces
     # SBGeom doesn't return normals in the extended region, so only test up to s=1 (that should be the same)
-    _check_normals_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions, atol=1e-6)
+    _check_normals_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, atol=1e-6)
 
-def test_normal_extension_constant_phi_principal_curvatures(_get_normal_extended_constant_phi_flux_surfaces, n_repetitions=1):
+def test_normal_extension_constant_phi_principal_curvatures(_get_normal_extended_constant_phi_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_constant_phi_flux_surfaces
     
-    _check_principal_curvatures_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, n_repetitions=n_repetitions, atol = 1e-6)
+    _check_principal_curvatures_both(fs_jax, fs_sbgeom, _extended_sampling_grid, _extended_1d_sampling_grid, atol = 1e-6)
 
+@pytest.mark.slow
 def test_normal_extension_constant_phi_vectorization(_get_normal_extended_constant_phi_flux_surfaces):
     fs_jax, fs_sbgeom = _get_normal_extended_constant_phi_flux_surfaces
     _check_vectorized(fs_jax.cartesian_position)

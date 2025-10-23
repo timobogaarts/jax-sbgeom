@@ -1,10 +1,14 @@
+import os
+
 import jax_sbgeom as jsb
 import jax.numpy as jnp
 import numpy as onp
 import StellBlanket.SBGeom as SBGeom 
 import jax
-import time
+jax.config.update("jax_enable_x64", True)
 
+
+import time
 from functools import partial
 from jax_sbgeom.flux_surfaces.flux_surfaces_base import _check_whether_make_normals_point_outwards_required, ToroidalExtent
 import pytest
@@ -12,8 +16,8 @@ from functools import lru_cache
 
 from jax_sbgeom.jax_utils.utils import _mesh_to_pyvista_mesh
 
-def _check_vectorized_internal(fun):
-     # Check that the function is properly vectorized
+
+def _check_vectorized(fun):
     s_1 = jnp.array([0.5264, 0.567837])
     fun(1.0, 0.2 ,0.3)
     
@@ -34,25 +38,6 @@ def _check_vectorized_internal(fun):
     fun(b_0, b_1, 1.0)
     fun(b_0, b_1, b_1)
 
-
-def _check_vectorized(fun):
-    if _bool_check_vector():
-        _check_vectorized_internal(fun)
-        return True
-    else:
-        return True
-
-jax.config.update("jax_enable_x64", True)
-
-def _bool_check_vector():
-    return False
-
-cached= True
-if cached:
-    jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
-    jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
-    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
-    jax.config.update("jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir")
 
 def _get_files():
     vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
@@ -80,66 +65,24 @@ def _1d_sampling_grid(fs_jax : jsb.flux_surfaces.FluxSurface, n_s : int = 6, n_t
     return onp.array(ss).ravel(), onp.zeros(ss.shape).ravel(), onp.array(tt).ravel(), onp.array(pp).ravel()
 
 
-def time_jsb_function(fun, *args,  n_repetitions = 1, jsb = True):
-    timings = []    
-    for n in range(n_repetitions):
-        start = time.time()
-        if jsb:
-            result = fun(*args).block_until_ready()
-        else:
-            result = fun(*args)
-        end = time.time()
-        timings.append(end - start)
-    return result, onp.mean(timings), onp.std(timings)
-
-def time_jsb_function_mult(fun, *args,  n_repetitions = 1, jsb = True):
-    timings = []
-    for n in range(n_repetitions):
-        start = time.time()
-        if jsb:
-            result = fun(*args)
-            result[0].block_until_ready()            
-        else:
-            result = fun(*args)
-        end = time.time()
-        timings.append(end - start)
-    return result, onp.mean(timings), onp.std(timings)
-
-def time_jsb_function_nested(fun, *args,  n_repetitions = 1, jsb = True):
-    timings = []
-    for n in range(n_repetitions):
-        start = time.time()
-        if jsb:
-            result = fun(*args)
-            result[0][0].block_until_ready()            
-        else:
-            result = fun(*args)
-        end = time.time()
-        timings.append(end - start)
-    return result, onp.mean(timings), onp.std(timings)
-
-def print_timings(name : str, time_jax : float, std_jax : float, time_sbgeom : float, std_sbgeom : float):
-    print(f"{name:30s} passed | jax-sbgeom: {time_jax*1e3:8.3f} ms ± {std_jax*1e3:8.3f} ms | SBGeom: {time_sbgeom*1e3:8.3f} ms ± {std_sbgeom*1e3:8.3f} ms")
-
 # ===================================================================================================================================================================================
 #                                                                          Base Flux Surface functions
 # ===================================================================================================================================================================================
    
-def _check_position_both(fs_jax, fs_sbgeom, sampling_func, sampling_func_1d, n_repetitions=1, atol =1e-13):
-    pos_jax, time_jax, std_jax          = time_jsb_function(fs_jax.cartesian_position, *sampling_func(fs_jax),    n_repetitions= n_repetitions )
-    pos_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(fs_sbgeom.Return_Position, *sampling_func_1d(fs_jax, reverse_theta = fs_sbgeom.du_x_dv_sign() == 1.0), n_repetitions=n_repetitions, jsb=False)
-    onp.testing.assert_allclose(pos_jax, pos_sbgeom.reshape(pos_jax.shape), atol = atol)
-    print_timings("Position", time_jax, std_jax, time_sbgeom, std_sbgeom)
+def _check_position_both(fs_jax, fs_sbgeom, sampling_func, sampling_func_1d, atol =1e-13):
+    pos_jax     = fs_jax.cartesian_position(*sampling_func(fs_jax) )
+    pos_sbgeom  = fs_sbgeom.Return_Position(*sampling_func_1d(fs_jax, reverse_theta = fs_sbgeom.du_x_dv_sign() == 1.0))
+    onp.testing.assert_allclose(pos_jax, pos_sbgeom.reshape(pos_jax.shape), atol = atol)    
 
    
-def _check_normals_both(fs_jax, fs_sbgeom, sampling_func, sampling_func_1d, n_repetitions=1, atol =1e-13):
-    norm_jax, time_jax, std_jax          = time_jsb_function(fs_jax.normal, *sampling_func(fs_jax, include_axis=False),              n_repetitions= n_repetitions)
-    norm_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(fs_sbgeom.Return_Normal, *sampling_func_1d(fs_jax, include_axis=False, reverse_theta=fs_sbgeom.du_x_dv_sign() == 1.0), n_repetitions= n_repetitions, jsb=False)        
+def _check_normals_both(fs_jax, fs_sbgeom, sampling_func, sampling_func_1d, atol =1e-13):
+    norm_jax    = fs_jax.normal(*sampling_func(fs_jax, include_axis=False))
+    norm_sbgeom = fs_sbgeom.Return_Normal(*sampling_func_1d(fs_jax, include_axis=False, reverse_theta=fs_sbgeom.du_x_dv_sign() == 1.0))      
     onp.testing.assert_allclose(norm_jax, norm_sbgeom.reshape(norm_jax.shape), atol= atol)
-    print_timings("Normal", time_jax, std_jax, time_sbgeom, std_sbgeom)
+    
 
-def _check_principal_curvatures_both(fs_jax, fs_sbgeom, sampling_func, sampling_func_1d, n_repetitions=1, atol = 1e-13):
-    curv_jax, time_jax, std_jax          = time_jsb_function(fs_jax.principal_curvatures, *sampling_func(fs_jax, include_axis=False),      n_repetitions= n_repetitions)
+def _check_principal_curvatures_both(fs_jax, fs_sbgeom, sampling_func, sampling_func_1d, atol = 1e-13):
+    curv_jax         = fs_jax.principal_curvatures(*sampling_func(fs_jax, include_axis=False))
     def return_all_principal_curvatures(s,d,  theta, phi):
         # SBGeom returns does not have a vectorized function. we do the inefficient thing here.
         assert s.ndim == 1 and theta.ndim == 1 and phi.ndim == 1 and s.shape == theta.shape and s.shape == phi.shape
@@ -150,22 +93,23 @@ def _check_principal_curvatures_both(fs_jax, fs_sbgeom, sampling_func, sampling_
             k1[i] = p_curv[0]
             k2[i] = p_curv[1]
         return onp.stack([k1, k2], axis=-1)
-    curv_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function(return_all_principal_curvatures, *sampling_func_1d(fs_jax, include_axis=False, reverse_theta=fs_sbgeom.du_x_dv_sign() == 1.0), n_repetitions= n_repetitions, jsb=False)    
-    onp.testing.assert_allclose(curv_jax, curv_sbgeom.reshape(curv_jax.shape), atol= atol)
-    print_timings("Principal Curvatures", time_jax, std_jax, time_sbgeom, std_sbgeom)
+    curv_sbgeom = return_all_principal_curvatures(*sampling_func_1d(fs_jax, include_axis=False, reverse_theta=fs_sbgeom.du_x_dv_sign() == 1.0)) 
+    onp.testing.assert_allclose(curv_jax, curv_sbgeom.reshape(curv_jax.shape), atol= atol)    
     
-def test_position(_get_flux_surfaces, n_repetitions = 1):    
+def test_position(_get_flux_surfaces):    
     fs_jax, fs_sbgeom = _get_flux_surfaces
-    _check_position_both(fs_jax, fs_sbgeom, _sampling_grid, _1d_sampling_grid, n_repetitions=n_repetitions)
+    _check_position_both(fs_jax, fs_sbgeom, _sampling_grid, _1d_sampling_grid)
 
-def test_normals(_get_flux_surfaces, n_repetitions = 1):
+def test_normals(_get_flux_surfaces):
     fs_jax, fs_sbgeom = _get_flux_surfaces
-    _check_normals_both(fs_jax, fs_sbgeom, _sampling_grid, _1d_sampling_grid, n_repetitions=n_repetitions)
+    _check_normals_both(fs_jax, fs_sbgeom, _sampling_grid, _1d_sampling_grid)
 
-def test_principal_curvatures(_get_flux_surfaces, n_repetitions = 1):
+def test_principal_curvatures(_get_flux_surfaces):
    fs_jax, fs_sbgeom = _get_flux_surfaces
-   _check_principal_curvatures_both(fs_jax, fs_sbgeom, _sampling_grid, _1d_sampling_grid, n_repetitions = n_repetitions) 
+   _check_principal_curvatures_both(fs_jax, fs_sbgeom, _sampling_grid, _1d_sampling_grid) 
 
+
+@pytest.mark.slow
 def test_vectorization(_get_flux_surfaces):
     fs_jax, fs_sbgeom = _get_flux_surfaces
     _check_vectorized(fs_jax.cartesian_position)
@@ -193,7 +137,7 @@ def _flip_vertices_theta_tetrahedral(positions, n_theta, n_phi, axis_included : 
         total_flip     = vmap_flip(positions.reshape(-1, n_theta, n_phi, 3)).reshape(-1,3)
     return total_flip
 
-def _check_meshing_surface_both(fs_jax, fs_sbgeom,  smax, tor_extent : str = 'half_module',  n_repetitions = 1, atol = 1e-13):    
+def _check_meshing_surface_both(fs_jax, fs_sbgeom,  smax, tor_extent : str = 'half_module', atol = 1e-13):    
     if tor_extent == 'half_module':
         tor_extent= jsb.flux_surfaces.flux_surfaces_base.ToroidalExtent.half_module(fs_jax)
     elif tor_extent == 'full':
@@ -205,8 +149,8 @@ def _check_meshing_surface_both(fs_jax, fs_sbgeom,  smax, tor_extent : str = 'ha
     n_theta = 50
     n_phi  = 60
 
-    (pos_jax, tri_jax), time_jax, std_jax          = time_jsb_function_mult(jsb.flux_surfaces.flux_surface_meshing.mesh_surface, fs_jax, smax, tor_extent,  n_theta, n_phi, True, n_repetitions=n_repetitions)
-    mesh_sbgeom, time_sbgeom, std_sbgeom           = time_jsb_function(     fs_sbgeom.Mesh_Surface, min(smax, 1), max(smax- 1, 0.0), n_phi, n_theta, tor_extent.start, tor_extent.end, True,   n_repetitions=n_repetitions, jsb=False)
+    pos_jax, tri_jax        = jsb.flux_surfaces.flux_surface_meshing.mesh_surface(fs_jax, smax, tor_extent,  n_theta, n_phi, True)
+    mesh_sbgeom     = fs_sbgeom.Mesh_Surface(min(smax, 1), max(smax- 1, 0.0), n_phi, n_theta, tor_extent.start, tor_extent.end, True)
 
     # The sampling cannot be directly influenced. 
     # Instead, we just reverse the theta direction by flipping all vertices if required 
@@ -218,9 +162,7 @@ def _check_meshing_surface_both(fs_jax, fs_sbgeom,  smax, tor_extent : str = 'ha
         pos_jax_mod = pos_jax
 
     onp.testing.assert_allclose(pos_jax_mod, mesh_sbgeom.vertices, atol = atol)
-    onp.testing.assert_allclose(tri_jax, mesh_sbgeom.connectivity, atol = atol)
-
-    print_timings("mesh_surface", time_jax, std_jax, time_sbgeom, std_sbgeom)
+    onp.testing.assert_allclose(tri_jax, mesh_sbgeom.connectivity, atol = atol)    
 
 
 
@@ -255,17 +197,16 @@ def _get_all_closed_surfaces(fs_jax):
     return [single_surface, two_surfaces, closed_no_axis, closed_axis]
 
 
-def _check_all_closed_surfaces(fs_jax, fs_sbgeom, n_repetitions = 1, atol = 1e-10):
-    surfaces, time_jax, std_jax = time_jsb_function_nested(_get_all_closed_surfaces, fs_jax, n_repetitions=n_repetitions)
+def _check_all_closed_surfaces(fs_jax, fs_sbgeom, atol = 1e-10):
+    surfaces = _get_all_closed_surfaces(fs_jax )
 
     for surf in surfaces:
         points, connectivity = surf
         mesh = _mesh_to_pyvista_mesh(points, connectivity)  
         onp.testing.assert_allclose(mesh.volume, jsb.flux_surfaces.flux_surface_meshing._volume_of_mesh(points, connectivity), atol= atol)
+
     
-    print_timings("all closed surfaces", time_jax, std_jax, 0.0, 0.0)
-    print("\t (sbgeom has different closed surfaces)")
-def _check_all_tetrahedral_meshes(fs_jax, fs_sbgeom, n_repetitions = 1, atol = 1e-13):
+def _check_all_tetrahedral_meshes(fs_jax, fs_sbgeom, atol = 1e-13):
     n_phi   = 31
     n_theta = 20
     s_disc = 5
@@ -294,8 +235,8 @@ def _check_all_tetrahedral_meshes(fs_jax, fs_sbgeom, n_repetitions = 1, atol = 1
         return mesh.vertices, mesh.connectivity
         
     for s_i, phi_i in zip(s_values, phi_ends):
-        mesh_jax, time_jax, std_jax    = time_jsb_function_mult(create_jax_mesh, s_i, phi_i, n_repetitions=n_repetitions)
-        mesh_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function_mult(create_sbgeom_mesh, s_i, phi_i, jsb=False, n_repetitions=n_repetitions)
+        mesh_jax    = create_jax_mesh(s_i, phi_i)
+        mesh_sbgeom = create_sbgeom_mesh(s_i, phi_i)
 
         onp.testing.assert_allclose(mesh_jax[1], mesh_sbgeom[1]), "Tetrahedral mesh connectivity does not match SBGeom"
 
@@ -304,10 +245,9 @@ def _check_all_tetrahedral_meshes(fs_jax, fs_sbgeom, n_repetitions = 1, atol = 1
             onp.testing.assert_allclose(total_flip, mesh_sbgeom[0], atol = atol), "Tetrahedral mesh points do not match SBGeom"                    
         else:
             onp.testing.assert_allclose(mesh_jax[0], mesh_sbgeom[0], atol = atol), "Tetrahedral mesh points do not match SBGeom"
-
-    print_timings("Tetrahedral mesh creation", time_jax, std_jax, time_sbgeom, std_sbgeom)
+    
         
-def _check_watertight_surfaces(fs_jax, fs_sbgeom, n_repetitions = 1, atol = 1e-13):
+def _check_watertight_surfaces(fs_jax, fs_sbgeom, atol = 1e-13):
     n_phi   = 31
     n_theta = 20
     s_disc = 5
@@ -319,11 +259,11 @@ def _check_watertight_surfaces(fs_jax, fs_sbgeom, n_repetitions = 1, atol = 1e-1
         mesh_j =  jsb.flux_surfaces.flux_surface_meshing.mesh_watertight_layers(fs_jax, s_values, ToroidalExtent(0, phi_end), n_theta, n_phi)        
         return mesh_j[0], mesh_j[1]
     
-    mesh_jax, time_jax, std_jax = time_jsb_function_mult(create_jax_mesh, s_values, phi_end, n_repetitions=n_repetitions)
+    mesh_jax = create_jax_mesh(s_values, phi_end)
 
     
     sdiff = onp.diff(s_values)
-    mesh_sbgeom, time_sbgeom, std_sbgeom = time_jsb_function_mult(fs_sbgeom.Mesh_Watertight_Flux_Surfaces, float(s_values[0]), 0.0, sdiff, onp.zeros_like(sdiff), n_phi, n_theta, 0.0, 0.2 * onp.pi, n_repetitions=n_repetitions, jsb=False)
+    mesh_sbgeom = fs_sbgeom.Mesh_Watertight_Flux_Surfaces(float(s_values[0]), 0.0, sdiff, onp.zeros_like(sdiff), n_phi, n_theta, 0.0, 0.2 * onp.pi)
 
     def check_points():
         reverse_theta = fs_sbgeom.du_x_dv_sign() == 1.0        
@@ -340,48 +280,45 @@ def _check_watertight_surfaces(fs_jax, fs_sbgeom, n_repetitions = 1, atol = 1e-1
             conn_sbgeom = mesh_sbgeom[1][i]
             onp.testing.assert_allclose(conn_jax, conn_sbgeom), "Watertight mesh connectivity does not match SBGeom"
     check_points()
-    check_connectivity()
-    print_timings("Watertight mesh creation", time_jax, std_jax, time_sbgeom, std_sbgeom)
+    check_connectivity()    
 
 
-def test_meshing_surface_half_mod(_get_flux_surfaces,n_repetitions = 1):    
+def test_meshing_surface_half_mod(_get_flux_surfaces):    
     fs_jax, fs_sbgeom = _get_flux_surfaces
-    _check_meshing_surface_both(fs_jax, fs_sbgeom, 1.0, tor_extent= "half_module", n_repetitions=n_repetitions)
+    _check_meshing_surface_both(fs_jax, fs_sbgeom, 1.0, tor_extent= "half_module")
 
-def test_meshing_surface_full(_get_flux_surfaces,n_repetitions = 1):    
+def test_meshing_surface_full(_get_flux_surfaces):    
     fs_jax, fs_sbgeom = _get_flux_surfaces
-    _check_meshing_surface_both(fs_jax, fs_sbgeom, 1.0, tor_extent= "full", n_repetitions=n_repetitions)
+    _check_meshing_surface_both(fs_jax, fs_sbgeom, 1.0, tor_extent= "full")
 
-def test_all_closed_surfaces(_get_flux_surfaces,n_repetitions = 1):    
+def test_all_closed_surfaces(_get_flux_surfaces):    
     fs_jax, fs_sbgeom = _get_flux_surfaces
-    _check_all_closed_surfaces(fs_jax, fs_sbgeom, n_repetitions=n_repetitions)
+    _check_all_closed_surfaces(fs_jax, fs_sbgeom)
 
-def test_all_tetrahedral_meshes(_get_flux_surfaces,n_repetitions = 1):    
+def test_all_tetrahedral_meshes(_get_flux_surfaces):    
     fs_jax, fs_sbgeom = _get_flux_surfaces
-    _check_all_tetrahedral_meshes(fs_jax, fs_sbgeom, n_repetitions=n_repetitions)
+    _check_all_tetrahedral_meshes(fs_jax, fs_sbgeom)
   
-def test_watertight_surfaces(_get_flux_surfaces, n_repetitions = 1):    
+def test_watertight_surfaces(_get_flux_surfaces):    
     fs_jax, fs_sbgeom = _get_flux_surfaces
-    _check_watertight_surfaces(fs_jax, fs_sbgeom, n_repetitions=n_repetitions)
+    _check_watertight_surfaces(fs_jax, fs_sbgeom)
 
 
 # ===================================================================================================================================================================================
 #                                                                           FluxSurface base functions
 # ===================================================================================================================================================================================
 
-def _check_volumes(fs_jax, fs_sbgeom, n_repetitions = 1, atol = 1e-13):
+def _check_volumes(fs_jax, fs_sbgeom, atol = 1e-13):
 
     s = 0.5357
 
-    vol_jax, time_jax, std_jax          = time_jsb_function(jsb.flux_surfaces.flux_surfaces_base._volume_from_fourier_half_mod, fs_jax.data, fs_jax.settings, s, n_repetitions=n_repetitions)
-    vol_jax2, time_jax2, std_jax2       = time_jsb_function(jsb.flux_surfaces.flux_surfaces_base._volume_from_fourier, fs_jax.data, fs_jax.settings, s, n_repetitions=n_repetitions)
+    vol_jax  = jsb.flux_surfaces.flux_surfaces_base._volume_from_fourier_half_mod(fs_jax.data, fs_jax.settings, s)
+    vol_jax2 = jsb.flux_surfaces.flux_surfaces_base._volume_from_fourier(fs_jax.data, fs_jax.settings, s)
 
     onp.testing.assert_allclose(vol_jax, vol_jax2, atol=atol)
+    
 
-    print_timings("Volume", time_jax, std_jax, time_jax2, std_jax2)
-    print("\t (sbgeom has no volume function)")
-
-def test_volumes(_get_flux_surfaces, n_repetitions = 1):
+def test_volumes(_get_flux_surfaces):
         
     fs_jax, fs_sbgeom = _get_flux_surfaces
-    _check_volumes(fs_jax, fs_sbgeom, n_repetitions=n_repetitions)
+    _check_volumes(fs_jax, fs_sbgeom)
