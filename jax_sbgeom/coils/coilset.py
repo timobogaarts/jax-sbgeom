@@ -1,15 +1,78 @@
 from .base_coil import Coil
+from typing import List
+import jax
+import jax.numpy as jnp
+from dataclasses import dataclass
+
+from .base_coil import coil_position, coil_tangent
+
+from .base_coil import FiniteSizeMethod
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
 class CoilSet:
-    '''
-    Set of coils
-    '''
-    coils : list[Coil]
+    coils : Coil
+    
+    @classmethod
+    def from_list(cls, coils : List[Coil]):
+        coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)
+        return cls(coils = coils_v)
+    
+    def position(self, s):
+        return _coilset_position(self, s)
+    def tangent(self, s):
+        return _coilset_tangent(self, s)
+    
+    def position_different_s(self, s):
+        return coilset_position_different_s(self, s)    
+    def tangent_different_s(self, s):
+        return coilset_tangent_different_s(self, s)
+    
 
-    def __init__(self, coils : list[Coil]):
-        self.coils = coils
+_coil_position_vmap_same_s = jax.vmap(coil_position, in_axes=(0, None))
+_coil_tangent_vmap_same_s  = jax.vmap(coil_tangent, in_axes=(0, None))
 
-    def __getitem__(self, index : int) -> Coil:
-        return self.coils[index]
-    def __len__(self) -> int:
-        return len(self.coils)
+@jax.jit
+def _coilset_position(coilset : CoilSet, s):
+    return _coil_position_vmap_same_s(coilset.coils, s)
+
+@jax.jit
+def _coilset_tangent(coilset : CoilSet, s):
+    return _coil_tangent_vmap_same_s(coilset.coils, s)  
+
+_coil_position_vmap_different_s = jax.vmap(coil_position, in_axes=(0, 0))
+_coil_tangent_vmap_different_s  = jax.vmap(coil_tangent, in_axes=(0, 0))
+
+@jax.jit
+def coilset_position_different_s(coilset : CoilSet, s):
+    return _coil_position_vmap_different_s(coilset.coils, s)    
+@jax.jit
+def coilset_tangent_different_s(coilset : CoilSet, s):
+    return _coil_tangent_vmap_different_s(coilset.coils, s)
+
+_coil_finite_size_vmap_same_s = jax.vmap(lambda coil, s: coil.finite_size_method.position(coil, s), in_axes=(0, None))
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class CoilSetFiniteSize:
+    coil : Coil
+    finitesizemethod : FiniteSizeMethod
+
+    @classmethod    
+    def from_lists(cls, coils : List[Coil], finitesizemethods : List[FiniteSizeMethod]):
+        coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)
+        finitesizemethods_v = jax.tree.map(lambda *xs : jnp.stack(xs), *finitesizemethods)
+        return cls(coil = coils_v, finitesizemethod = finitesizemethods_v)
+    
+    def position(self, s):
+        return _coilset_position(self, s)
+    
+    def tangent(self, s):
+        return _coilset_tangent(self, s)
+    
+    def position_different_s(self, s):
+        return coilset_position_different_s(self, s)    
+    
+    def tangent_different_s(self, s):
+        return coilset_tangent_different_s(self, s)
     

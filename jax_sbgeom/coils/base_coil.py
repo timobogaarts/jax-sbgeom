@@ -11,48 +11,26 @@ from functools import partial
 @dataclass(frozen=True)
 class Coil(ABC):
     @abstractmethod 
-    def position(self, s):
-        '''
-        Position along the coil as a function of arc length
-
-        Parameters
-        ----------
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        Returns
-        -------
-        jnp.ndarray
-            Cartesian position(s) along the coil
-        '''
+    def position(self, s):     
         pass
 
     @abstractmethod
-    def tangent(self, s):
-        '''
-        Tangent vector along the coil as a function of arc length
-
-        Parameters
-        ----------
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        Returns
-        -------
-        jnp.ndarray
-            Tangent vector(s) along the coil
-        '''
+    def tangent(self, s):       
         pass
 
     @abstractmethod
-    def centre(self):
-        '''
-        Centre of the coil
-
-        Returns
-        -------
-        jnp.ndarray (3,)
-            Centre of the coil
-        '''
+    def centre(self):      
         pass
+
+# Functional versions for vmapping
+def coil_position(coil: Coil, s):
+    return coil.position(s)
+
+def coil_tangent(coil: Coil, s):
+    return coil.tangent(s)
+
+def coil_centre(coil: Coil):
+    return coil.centre()
 
 # The reason this is not just a function is to allow for finite size methods that need to precompute data from the coil
 # such as a RMF method
@@ -61,39 +39,11 @@ class Coil(ABC):
 class FiniteSizeMethod(ABC):
             
     @abstractmethod
-    def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
-        '''
-        Compute the radial vector along the coil as a function of arc length
-
-        Parameters
-        ----------
-        coil : Coil
-            Coil object
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        Returns
-        -------
-        jnp.ndarray [..., 3]
-            Radial vector(s) along the coil
-        '''
+    def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):        
         pass
 
     @abstractmethod
     def compute_finite_size_frame(self, coil : Coil, s : jnp.ndarray):
-        '''
-        Compute the finite size frame along the coil as a function of arc length
-
-        Parameters
-        ----------
-        coil : Coil
-            Coil object
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        Returns
-        -------
-        jnp.ndarray [..., 2, 3]
-            Finite size vector(s) along the coil
-        '''        
         pass
 
 @jax.tree_util.register_dataclass
@@ -102,45 +52,13 @@ class FiniteSizeCoil():
     coil : Coil
     finite_size_method : FiniteSizeMethod
 
-    def position(self, s):
-        '''
-        Position along the coil as a function of arc length
-        Forwards the base coil
-        Parameters
-        ----------
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        Returns
-        -------
-        jnp.ndarray
-            Cartesian position(s) along the coil
-        '''
+    def position(self, s):       
         return self.coil.position(s)
     
-    def tangent(self, s):
-        '''
-        Tangent vector along the coil as a function of arc length
-        Forwards the base coil  
-        Parameters
-        ----------
-        s : jnp.ndarray
-            Arc length(s) along the coil
-        Returns
-        -------
-        jnp.ndarray
-            Tangent vector(s) along the coil
-        '''
+    def tangent(self, s):        
         return self.coil.tangent(s)
     
-    def centre(self):
-        '''
-        Centre of the coil
-        Forwards the base coil  
-        Returns
-        -------
-        jnp.ndarray (3,)
-            Centre of the coil
-        '''
+    def centre(self):        
         return self.coil.centre()    
 
     def radial_vector(self, s):
@@ -199,6 +117,16 @@ class FiniteSizeCoil():
         '''
         return _compute_finite_size(self.coil, self.finite_size_method, s, width_radial, width_phi)
     
+
+    
+@jax.jit
+def _compute_radial_vector(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray):
+    return finitesizemethod.compute_radial_vector(coil, s)
+
+@jax.jit
+def _compute_finite_size_frame(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray):    
+    return finitesizemethod.compute_finite_size_frame(coil, s)
+
 @jax.jit
 def _compute_finite_size(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray, width_radial : float, width_phi : float):
     '''
@@ -226,46 +154,7 @@ def _compute_finite_size(coil : Coil, finitesizemethod : FiniteSizeMethod, s : j
     frame    = finitesizemethod.compute_finite_size_frame(coil, s)
     return _finite_size_from_data(location, frame, width_radial, width_phi)
 
-@jax.jit
-def _compute_radial_vector(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray):
-    '''
-    Compute radial vector along the coil as a function of arc length
-    Uses the finite size method to compute the radial vector.
 
-    Parameters
-    ----------
-    coil : Coil
-        Coil object
-    finitesizemethod : FiniteSizeMethod     
-        Finite size method object
-    s : jnp.ndarray
-        Arc length(s) along the coil
-    Returns
-    -------
-    jnp.ndarray [..., 3]
-        Radial vector(s) along the coil
-    '''
-    return finitesizemethod.compute_radial_vector(coil, s)
-
-@jax.jit
-def _compute_finite_size_frame(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray):
-    '''
-    Compute finite size frame along the coil as a function of arc length
-    Uses the finite size method to compute the finite size frame.
-
-    Parameters
-    ----------
-    coil : Coil
-        Coil object
-    finitesizemethod : FiniteSizeMethod
-        Finite size method object
-    s : jnp.ndarray
-        Arc length(s) along the coil
-    Returns
-    -------
-    jnp.ndarray [..., 2, 3]
-    '''
-    return finitesizemethod.compute_finite_size_frame(coil, s)
 
 # ===================================================================================================================================================================================
 #                                                                           Finite Size Utility Methods
@@ -328,8 +217,6 @@ def _frame_from_radial_vector(tangents, radial_vectors):
     e_phi_n = e_phi_n / jnp.linalg.norm(e_phi_n, axis=-1, keepdims=True) # ..., 3
     return jnp.stack([e_R_n, e_phi_n], axis=-2) # ..., 2, 3
 
-
-
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #                                                                           Centroid
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -375,7 +262,7 @@ def _radial_vector_centroid_from_data(coil_centre, positions, tangents):
     '''
     d_i       =  positions - coil_centre # ..., 3 - 3 = ..., 3
     e_R       = d_i - jnp.einsum("...j,...i,...i->...j", tangents, d_i, tangents) # ..., 3
-    return e_R
+    return e_R / jnp.linalg.norm(e_R, axis=-1, keepdims=True) # ..., 3
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #                                                                           Frenet-Serret
