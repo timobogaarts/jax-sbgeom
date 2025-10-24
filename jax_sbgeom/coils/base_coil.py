@@ -36,6 +36,9 @@ def coil_tangent(coil: Coil, s):
 
 def coil_centre(coil: Coil):
     return coil.centre()
+
+def coil_normal(coil: Coil, s):
+    return coil.normal(s)
 # ===================================================================================================================================================================================
 #                                                                           Finite Size Utility Methods
 # ===================================================================================================================================================================================
@@ -46,10 +49,40 @@ def coil_centre(coil: Coil):
 @dataclass(frozen=True)
 class FiniteSizeMethod(ABC):
 
+    @classmethod    
+    def setup_from_coil(cls, coil : Coil, *args):
+        '''
+        Function to setup the FiniteSizeMethod from the coil object. This returns 
+        the data needed to instantiate the FiniteSizeMethod (in a dictionary)
+
+        This is useful to vmap over the coil object.
+        If one would only have a from_coil, this instantiates the FiniteSizeMethod inside the vmap, which is not JIT compatible.
+        Therefore, the idea is to create the data needed to instantiate the FiniteSizeMethod inside the vmap, and then instantiate only once.
+
+        Parameters
+        ----------
+        coil : Coil
+            Coil object
+        args : tuple
+            Additional arguments for the setup (specific to the FiniteSizeMethod)
+
+        
+        '''
+        return ()
+
+    @classmethod 
+    def setup_from_coils(cls, coil : Coil, *args):
+        '''
+        Vmap version of setup_from_coil
+        This is required because there needs to be a choice made whether the extra arguments are vmapped over or not.
+        Some coils, like RotationMinimizedFrame, require a static number, and this cannot be vmapped using the base vmap.
+        '''
+        return (_vmap_setup_from_coil_base(cls, coil, *args),)
+
     @classmethod
-    @abstractmethod
-    def from_coil(cls, coil : Coil, **kwargs):
-        ...
+    def from_coil(cls, coil : Coil, *args):
+        data = _setup_finitesizemethod_from_coil(cls, coil, *args)
+        return cls(*data)
             
     @abstractmethod
     def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):        
@@ -66,6 +99,13 @@ def _compute_radial_vector(coil : Coil, finitesizemethod : FiniteSizeMethod, s :
 def _compute_finite_size_frame(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray):    
     radial_vectors = _compute_radial_vector(coil, finitesizemethod, s)
     return _frame_from_radial_vector(coil.tangent(s), radial_vectors)
+
+def _setup_finitesizemethod_from_coil(finitesizemethod_cls : Type[FiniteSizeMethod], coil : Coil, *args):
+    return finitesizemethod_cls.setup_from_coil(coil, *args)
+
+_vmap_setup_from_coil_base = jax.jit(jax.vmap(_setup_finitesizemethod_from_coil, in_axes=(None, 0)), static_argnums=(0,)) 
+# This function vmaps over all the arguments as well. 
+
 
 
 @jax.jit
@@ -97,14 +137,14 @@ def _frame_from_radial_vector(tangents, radial_vectors):
 # ===================================================================================================================================================================================
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
-class FiniteSizeCoil():
+class FiniteSizeCoil(Coil):
     coil : Coil
     finite_size_method : FiniteSizeMethod
 
     @classmethod    
-    def from_coil(cls, coil : Coil, finite_size_method : Type[FiniteSizeMethod], **kwargs):
-        return cls(coil = coil, finite_size_method = finite_size_method.from_coil(coil, **kwargs))
-
+    def from_coil(cls, coil : Coil, finite_size_method : Type[FiniteSizeMethod], *args):
+        return cls(coil = coil, finite_size_method = finite_size_method.from_coil(coil, *args))
+      
     def position(self, s):       
         return self.coil.position(s)
     
@@ -112,6 +152,9 @@ class FiniteSizeCoil():
         return self.coil.tangent(s)
     
     def centre(self):        
+        return self.coil.centre()    
+        
+    def normal(self):        
         return self.coil.centre()    
 
     def radial_vector(self, s):
@@ -244,10 +287,6 @@ class CentroidFrame(FiniteSizeMethod):
 
     Centroid frame is defined by the radial vector being the vector that is pointing from the coil centre to the coil position, projected onto the plane normal to the tangent        
     '''
-    @classmethod
-    def from_coil(cls, coil : Coil, **kwargs):
-        return CentroidFrame()
-
     def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
         return _compute_radial_vector_centroid(coil, s)
 
@@ -278,14 +317,7 @@ def _radial_vector_centroid_from_data(coil_centre, positions, tangents):
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
-class FrenetSerretFrame(FiniteSizeMethod):    
-    '''
-    Finite size method using Frenet-Serret frame    
-    '''
-    @classmethod
-    def from_coil(cls, coil : Coil, **kwargs):
-        return FrenetSerretFrame()
-        
+class FrenetSerretFrame(FiniteSizeMethod):            
     def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
         return _compute_radial_vector_frenet_serret(coil, s)
  
@@ -313,8 +345,8 @@ class RadialVectorFrame(FiniteSizeMethod):
     radial_vectors_i : jnp.ndarray
 
     @classmethod
-    def from_coil(cls, coil : Coil, **kwargs):
-        return RadialVectorFrame.from_radial_vectors(kwargs.get("radial_vectors"))
+    def setup_from_coil(cls, coil : Coil, *args):
+        return (args[0])
 
     @classmethod 
     def from_radial_vectors(cls, radial_vectors : jnp.ndarray):        
@@ -345,10 +377,18 @@ class RotationMinimizedFrame(RadialVectorFrame):
     The radial vectors are computed using the rotation minimizing frame algorithm.
     '''
     @classmethod 
-    def from_coil(cls, coil : Coil, number_of_rmf_samples : int):
-        radial_vector = _compute_full_rmf(coil, number_of_rmf_samples)
-        return cls(radial_vectors_i=radial_vector)
- 
+    def setup_from_coil(cls, coil : Coil, number_of_rmf_samples : int):
+        return (_compute_full_rmf(coil, number_of_rmf_samples),)
+    
+    @classmethod 
+    def setup_from_coils(cls, coil : Coil, *args):
+        '''
+        Vmap version of setup_from_coil
+        This is required because there needs to be a choice made whether the extra arguments are vmapped over or not.
+        Some coils, like RotationMinimizedFrame, require a static number, and this cannot be vmapped using the base vmap.
+        '''
+        return (_setup_from_coils_rotation_minimized(coil, *args),)
+    
 
 @partial(jax.jit, static_argnums=(1,))
 def _compute_full_rmf(coil : Coil, number_of_rmf_samples : int):
@@ -380,6 +420,7 @@ def _compute_full_rmf(coil : Coil, number_of_rmf_samples : int):
     coil_centre   = coil.centre()
     return _rmf_radial_vector_from_data(coil_centre, positions_rmf, tangents_rmf)
 
+_setup_from_coils_rotation_minimized = jax.jit(jax.vmap(_compute_full_rmf, in_axes=(0,None)), static_argnums=(1))       
 
 @jax.jit
 def _rmf_radial_vector_from_data(coil_centre, positions, tangents):

@@ -128,6 +128,7 @@ def _switch_finite_size_cjax(coil_jax, width_0, width_1, method, ns, **kwargs):
         return finitesize_coil
     elif method == "rmf":
         number_of_rmf_samples = kwargs.get("number_of_rmf_samples", 1000)
+        kwargdict = {"number_of_rmf_samples" : number_of_rmf_samples}
         finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coil_jax, jsb.coils.base_coil.RotationMinimizedFrame.from_coil(coil_jax, number_of_rmf_samples))
         return finitesize_coil
     else:
@@ -233,7 +234,7 @@ def test_discrete_coil_vectorized_position(_get_all_discrete_coils):
         return finitesize_coil.finite_size(s, 0.3, 0.5)
     _check_single_vectorized(frenet_serret)
     def rmf(s):
-        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coilset_jaxsbgeom[0], jsb.coils.base_coil.RotationMinimizedFrame.from_coil(coilset_jaxsbgeom[0], 1000))
+        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coilset_jaxsbgeom[0], jsb.coils.base_coil.RotationMinimizedFrame.from_coil(coilset_jaxsbgeom[0], 111))
         return finitesize_coil.finite_size(s, 0.3, 0.5)
     _check_single_vectorized(rmf)
     
@@ -254,7 +255,7 @@ def test_fourier_coil_vectorized_position(_get_all_fourier_coils):
         return finitesize_coil.finite_size(s, 0.3, 0.5)
     _check_single_vectorized(frenet_serret)
     def rmf(s):
-        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coilset_jax[0], jsb.coils.base_coil.RotationMinimizedFrame.from_coil(coilset_jax[0], 1000))
+        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coilset_jax[0], jsb.coils.base_coil.RotationMinimizedFrame.from_coil(coilset_jax[0],111))
         return finitesize_coil.finite_size(s, 0.3, 0.5)
     _check_single_vectorized(rmf)
 
