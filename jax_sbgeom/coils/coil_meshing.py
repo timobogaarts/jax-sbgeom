@@ -7,7 +7,7 @@ from typing import Literal
 from jax_sbgeom.jax_utils.utils import interpolate_array_modulo_broadcasted
 from jax_sbgeom.flux_surfaces.flux_surface_meshing import _build_triangles_surface, _build_closed_strips
 from .base_coil import FiniteSizeCoil
-
+from functools import partial
 
 def _mesh_finite_sized_lines_connectivity(n_samples : int, n_lines_per_coil : int, normal_orientation : bool):
     '''
@@ -32,6 +32,7 @@ def _mesh_finite_sized_lines_connectivity(n_samples : int, n_lines_per_coil : in
 def _mesh_rectangular_finite_sized_coils_connectivity(n_samples : int, normal_orientation : bool):
     return _mesh_finite_sized_lines_connectivity(n_samples, 4, normal_orientation)
 
+@partial(jax.jit, static_argnums = 1)
 def mesh_coil_surface(coil : FiniteSizeCoil, n_s : int, width_radial : float, width_phi : float):
     '''
     Mesh the surface of a coil

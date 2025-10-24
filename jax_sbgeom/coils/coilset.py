@@ -3,10 +3,10 @@ from typing import List
 import jax
 import jax.numpy as jnp
 from dataclasses import dataclass
-
+from typing import Type
 from .base_coil import coil_position, coil_tangent
 
-from .base_coil import FiniteSizeMethod
+from .base_coil import FiniteSizeMethod, FiniteSizeCoil
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -54,15 +54,17 @@ def coilset_tangent_different_s(coilset : CoilSet, s):
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
-class CoilSetFiniteSize:
-    coil : Coil
-    finitesizemethod : FiniteSizeMethod
+class FiniteSizeCoilSet:
+    finite_size_coils : FiniteSizeCoil
 
     @classmethod    
-    def from_lists(cls, coils : List[Coil], finitesizemethods : List[FiniteSizeMethod]):
-        coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)
-        finitesizemethods_v = jax.tree.map(lambda *xs : jnp.stack(xs), *finitesizemethods)
-        return cls(coil = coils_v, finitesizemethod = finitesizemethods_v)
+    def from_list(cls, coils : List[FiniteSizeCoil]):
+        coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)        
+        return cls(finite_size_coils = coils_v)
+    
+    @classmethod
+    def from_coils(cls, coils : List[Coil], method : Type[FiniteSizeMethod], **kwargs):
+        return 0
     
     def position(self, s):
         return _coilset_position(self, s)

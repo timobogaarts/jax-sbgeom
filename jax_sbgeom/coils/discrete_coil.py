@@ -73,19 +73,9 @@ class DiscreteCoil(Coil):
             Centre of the coil
         '''
         return self._centre_i
-
-    def _radial_vector_centroid(self, s):
-        return _discrete_coil_radial_vector_centroid(self, s)
     
-    def _finite_size_frame_centroid(self, s):
-        return _discrete_coil_finite_size_frame_centroid(self, s)
-    
-    def _radial_vector_frenet_serret(self, s):
-        return _discrete_coil_radial_vector_frenet_serret(self, s)
-
-    def _finite_size_frame_frenet_serret(self, s):
-        return _discrete_coil_finite_size_frame_frenet_serret(self, s)
-
+    def normal(self, s):
+        return jnp.full(s.shape + (3,), jnp.nan)
     
 # ===================================================================================================================================================================================
 #                                                                           Implementation
@@ -226,27 +216,6 @@ def _discrete_coil_radial_vector_frenet_serret(discrete_coil : DiscreteCoil, s):
     '''
     warnings.warn("Frenet-Serret frame is ill-defined for DiscreteCoil due to zero curvature. Returning NaN. ", RuntimeWarning)            
     return jnp.full(s.shape + (3,), jnp.nan)
-
-
-@jax.jit
-def _discrete_coil_finite_size_frame_frenet_serret(discrete_coil : DiscreteCoil, s):
-    '''
-    Internal function to find the frenet-serret finite size frame at arc length s
-    Not valid for discrete coils due to vanishing curvature between the data points
-
-    Parameters
-    ----------
-    discrete_coil : DiscreteCoil
-        Discrete coil object
-    s : jnp.ndarray
-        Arc length(s) along the coil    
-
-    Returns
-    -------
-    jnp.ndarray [..., 2, 3]
-        Finite size frame(s) along the coil (jnp.nan)
-    '''
-    return jnp.full(s.shape + (2,3), jnp.nan)
 
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #                           RMF

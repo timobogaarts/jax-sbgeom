@@ -6,6 +6,7 @@ import numpy as onp
 from typing import Literal
 from .base_coil import Coil
 from .base_coil import _radial_vector_centroid_from_data, _frame_from_radial_vector
+from jax_sbgeom.jax_utils.utils import stack_jacfwd
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -62,17 +63,6 @@ class FourierCoil(Coil):
     def centre(self):
         return self.centre_i
     
-    def _radial_vector_centroid(self, s):
-        return _fourier_coil_radial_vector_centroid(self, s)
-    
-    def _finite_size_frame_centroid(self, s):
-        return _fourier_coil_finite_size_frame_centroid(self, s)
-    
-    def _radial_vector_frenet_serret(self, s):
-        return _fourier_coil_radial_vector_frenet_serret(self, s)
-
-    def _finite_size_frame_frenet_serret(self, s):
-        return _fourier_coil_finite_size_frame_frenet_serret(self, s)
 
 @jax.jit
 def _fourier_position(coil : FourierCoil, s):
@@ -110,7 +100,9 @@ def _fourier_position(coil : FourierCoil, s):
     xyz = jax.lax.scan(fourier_sum, initial_sum, jnp.arange(n_modes))[0]
     return xyz + coil.centre_i 
 
-@jax.jit
+
+_grad_fourier_position = jax.jit(jnp.vectorize(stack_jacfwd(_fourier_position, argnums=1), excluded=(0,), signature='()->(3)'))
+
 def _fourier_tangent(coil : FourierCoil, s):
     '''
     Tangent vector along the coil as a function of arc length
@@ -126,24 +118,13 @@ def _fourier_tangent(coil : FourierCoil, s):
     jnp.ndarray
         Tangent vector(s) along the coil
     '''
-    n_modes = coil.fourier_cos.shape[-2]
-    n    = jnp.arange(1.0, n_modes + 1.0) * 2 * jnp.pi    
+    grad_pos = _grad_fourier_position(coil, s) # shape (..., 3)    
+    tangent  = grad_pos / jnp.linalg.norm(grad_pos, axis=-1, keepdims=True)
+    return tangent
 
-    final_shape = jnp.array(s).shape + (3,)
-    initial_sum = jnp.zeros(final_shape)
+_grad_grad_fourier_position = jax.jit(jnp.vectorize(stack_jacfwd(_fourier_tangent, argnums=1), excluded=(0,), signature='()->(3)'))
+            
 
-    def fourier_sum(vals, i):
-        xyz = vals
-        angle_cos = jnp.cos(n[i] * s)
-        angle_sin = jnp.sin(n[i] * s)
-        xyz = xyz + (- coil.fourier_cos[i, :] * n[i] * angle_sin[..., None] + coil.fourier_sin[i, :] * n[i] * angle_cos[..., None])
-        return xyz, None
-    
-    xyz = jax.lax.scan(fourier_sum, initial_sum, jnp.arange(n_modes))[0]
-
-    return xyz / jnp.linalg.norm(xyz, axis=-1, keepdims=True)
-
-@jax.jit
 def _fourier_normal(coil : FourierCoil, s):
     '''
     Normal vector along the coil as a function of arc length
@@ -158,24 +139,11 @@ def _fourier_normal(coil : FourierCoil, s):
     -------
     jnp.ndarray
         Normal vector(s) along the coil
-    '''
-    n_modes = coil.fourier_cos.shape[-2]
-    n    = jnp.arange(1.0, n_modes + 1.0) * 2 * jnp.pi    
-
-    final_shape = jnp.array(s).shape + (3,)
-    initial_sum = jnp.zeros(final_shape)
-
-    def fourier_sum(vals, i):
-        xyz = vals
-        angle_cos = jnp.cos(n[i] * s)
-        angle_sin = jnp.sin(n[i] * s)
-        xyz = xyz + (- coil.fourier_cos[i, :] * (n[i]**2) * angle_cos[..., None] - coil.fourier_sin[i, :] * (n[i]**2) * angle_sin[..., None])
-        return xyz, None
+    '''    
+    tangent_deriv = _grad_grad_fourier_position(coil, s) # shape (..., 3)
     
-    xyz = jax.lax.scan(fourier_sum, initial_sum,  jnp.arange(n_modes))[0]
-
-    return xyz / jnp.linalg.norm(xyz, axis=-1, keepdims=True)
-            
+    normal = tangent_deriv / jnp.linalg.norm(tangent_deriv, axis=-1, keepdims=True)
+    return normal
 
    
 # ===================================================================================================================================================================================
@@ -227,44 +195,3 @@ def _fourier_coil_finite_size_frame_centroid(coil : FourierCoil, s):
     return _frame_from_radial_vector(tangent, radial_vector)
 
 
-# -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-#                           Frenet-Serret
-# -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-@jax.jit 
-def _fourier_coil_radial_vector_frenet_serret(coil : FourierCoil, s):
-    '''
-    
-    Internal function to find the Frenet-Serret radial vector at arc length s
-
-    Parameters
-    ----------
-    coil : FourierCoil
-        Coil object
-    s : jnp.ndarray
-        Arc length(s) along the coil
-    Returns
-    -------
-    jnp.ndarray [..., 3]
-        Radial vector(s) along the coil
-    '''            
-    return _fourier_normal(coil, s)
-
-@jax.jit
-def _fourier_coil_finite_size_frame_frenet_serret(coil : FourierCoil, s):
-    '''
-    Internal function to find the Frenet-Serret finite size frame at arc length s
-
-    Parameters
-    ----------
-    coil : FourierCoil
-        Coil object
-    s : jnp.ndarray
-        Arc length(s) along the coil
-    Returns
-    -------
-    jnp.ndarray [..., 3, 3]
-        Finite size frame(s) along the coil
-    '''
-    radial_vector = _fourier_coil_radial_vector_frenet_serret(coil, s)
-    tangent       = _fourier_tangent(coil, s)
-    return _frame_from_radial_vector(tangent, radial_vector)

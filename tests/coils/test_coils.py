@@ -52,6 +52,15 @@ def _get_all_fourier_coils(request):
     coilset_jax = [jsb.coils.FourierCoil(jnp.array(i.Get_Fourier_Cos()), jnp.array(i.Get_Fourier_Sin()), jnp.array(i.Get_Centre())) for i in coilset_fourier]
     return coilset_jax, coilset_fourier
 
+@pytest.fixture(scope="session", params = _get_coil_files())
+def _get_all_fourier_coils_truncated(request):
+    # This is just to ensure that we have the shaping correct
+    coilset_sbgeom = SBGeom.Coils.Discrete_Coil_Set_From_HDF5(request.param)
+    coilset_fourier = SBGeom.Coils.Convert_to_Fourier_Coils(coilset_sbgeom, Nftrunc = 5)
+    
+    coilset_jax = [jsb.coils.FourierCoil(jnp.array(i.Get_Fourier_Cos()), jnp.array(i.Get_Fourier_Sin()), jnp.array(i.Get_Centre())) for i in coilset_fourier]
+    return coilset_jax, coilset_fourier
+
 #=================================================================================================================================================
 #                                                   Position & Tangent tests
 #=================================================================================================================================================
@@ -142,10 +151,7 @@ def _check_finite_size(coilset_jsb, coilset_sbgeom, method, rtol = 1e-12, atol =
         jsb_comparison = jnp.moveaxis(jsb_lines, 1,0).reshape(-1,3)
         onp.testing.assert_allclose(sbgeom_lines, jsb_comparison, rtol = rtol, atol=atol)
 
-def test_discrete_coil_finite_size_centroid(_get_all_discrete_coils):
-    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    _check_finite_size(coilset_jaxsbgeom, coilset_sbgeom, method="centroid", rtol =1e-7,  atol=1e-7)
-
+# No centroid finite size for discrete coils: it is defined differently in SBGeom and jax-sbgeom
 def test_discrete_coil_finite_size_rmf(_get_all_discrete_coils):
     coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
     nrmf = _sampling_s_finite_size().shape[0]
@@ -192,9 +198,7 @@ def _check_coils(coilset_jsb, coilset_sbgeom, method, atol = 1e-12, **kwargs):
         onp.testing.assert_allclose(jsb_mesh[0], sbgeom_mesh.vertices, atol=atol)
         onp.testing.assert_array_equal(jsb_mesh[1], sbgeom_mesh.connectivity)
 
-def test_discrete_coil_centroid_meshing(_get_all_discrete_coils):
-    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    _check_coils(coilset_jaxsbgeom, coilset_sbgeom, method="centroid", atol=1e-7)
+# No centroid meshing for discrete coils: it is defined differently in SBGeom and jax-sbgeom
 def test_discrete_coil_rmf_meshing(_get_all_discrete_coils):
     coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
     _check_coils(coilset_jaxsbgeom, coilset_sbgeom, method="rmf", atol=1e-7, number_of_rmf_samples = _sampling_s_finite_size().shape[0])
@@ -284,6 +288,6 @@ def test_vector_coilset_discrete(_get_all_discrete_coils):
     coils_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
     check_vector_coilset(coils_jaxsbgeom)   
 
-def test_vector_coilset_fourier(_get_all_fourier_coils):
-    coils_jax, coilset_sbgeom = _get_all_fourier_coils
+def test_vector_coilset_fourier(_get_all_fourier_coils_truncated):
+    coils_jax, coilset_sbgeom = _get_all_fourier_coils_truncated
     check_vector_coilset(coils_jax)
