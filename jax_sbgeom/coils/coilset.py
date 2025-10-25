@@ -36,23 +36,26 @@ class CoilSet:
     def normal_different_s(self, s):
         return _coil_normal_vmap_different_s(self.coils, s)
     
+    def __getitem__(self, idx):
+        return jax.tree.map(lambda x: x[idx], self.coils)
+                
 
-_coil_centre_vmap          = jax.jit(jax.vmap(coil_centre, in_axes=(0,)))
-_coil_position_vmap_same_s = jax.jit(jax.vmap(coil_position, in_axes=(0, None)))
-_coil_tangent_vmap_same_s  = jax.jit(jax.vmap(coil_tangent, in_axes=(0, None)))
-_coil_normal_vmap_same_s   = jax.jit(jax.vmap(coil_normal, in_axes=(0, None)))
+_coil_centre_vmap               = jax.jit(jax.vmap(coil_centre, in_axes=(0,)))
+_coil_position_vmap_same_s      = jax.jit(jax.vmap(coil_position, in_axes=(0, None)))
+_coil_tangent_vmap_same_s       = jax.jit(jax.vmap(coil_tangent, in_axes=(0, None)))
+_coil_normal_vmap_same_s        = jax.jit(jax.vmap(coil_normal, in_axes=(0, None)))
 
 _coil_position_vmap_different_s = jax.jit(jax.vmap(coil_position, in_axes=(0, 0)))
 _coil_tangent_vmap_different_s  = jax.jit(jax.vmap(coil_tangent, in_axes=(0, 0)))
 _coil_normal_vmap_different_s   = jax.jit(jax.vmap(coil_normal, in_axes=(0, 0)))
 
-_radial_vector_same_s  = jax.jit(jax.vmap(_compute_radial_vector, in_axes=(0, 0, None)))
-_finite_size_frame_same_s = jax.jit(jax.vmap(_compute_finite_size_frame, in_axes=(0, 0, None)))
-_finite_size_same_s = jax.jit(jax.vmap(_compute_finite_size, in_axes=(0, 0, None, None, None)))
+_radial_vector_same_s           = jax.jit(jax.vmap(_compute_radial_vector, in_axes=(0, 0, None)))
+_finite_size_frame_same_s       = jax.jit(jax.vmap(_compute_finite_size_frame, in_axes=(0, 0, None)))
+_finite_size_same_s             = jax.jit(jax.vmap(_compute_finite_size, in_axes=(0, 0, None, None, None)))
 
-_radial_vector_different_s  = jax.jit(jax.vmap(_compute_radial_vector, in_axes=(0, 0, 0)))
-_finite_size_frame_different_s = jax.jit(jax.vmap(_compute_finite_size_frame, in_axes=(0, 0, 0)))
-_finite_size_different_s = jax.jit(jax.vmap(_compute_finite_size, in_axes=(0, 0, 0, None, None)))
+_radial_vector_different_s      = jax.jit(jax.vmap(_compute_radial_vector, in_axes=(0, 0, 0)))
+_finite_size_frame_different_s  = jax.jit(jax.vmap(_compute_finite_size_frame, in_axes=(0, 0, 0)))
+_finite_size_different_s        = jax.jit(jax.vmap(_compute_finite_size, in_axes=(0, 0, 0, None, None)))
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -68,7 +71,11 @@ class FiniteSizeCoilSet(CoilSet):
         coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)
         finitesizemethod = method.setup_from_coils(coils_v, *args)
         return cls(FiniteSizeCoil(coils_v, method(*finitesizemethod)), n_coils = len(coils))
-        
+    
+    @classmethod
+    def from_coilset(cls, coilset : CoilSet, method : Type[FiniteSizeMethod], *args):
+        finitesizemethod = method.setup_from_coils(coilset.coils, *args)
+        return cls(FiniteSizeCoil(coilset.coils, method(*finitesizemethod)), n_coils = coilset.n_coils)
 
     def radial_vector(self, s):
         return _radial_vector_same_s(self.coils.coil, self.coils.finite_size_method, s)

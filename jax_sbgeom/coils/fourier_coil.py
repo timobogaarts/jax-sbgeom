@@ -6,7 +6,10 @@ import numpy as onp
 from typing import Literal
 from .base_coil import Coil
 from .base_coil import _radial_vector_centroid_from_data, _frame_from_radial_vector
+from .discrete_coil import DiscreteCoil
 from jax_sbgeom.jax_utils.utils import stack_jacfwd
+from functools import partial
+from .coilset import CoilSet
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -193,5 +196,84 @@ def _fourier_coil_finite_size_frame_centroid(coil : FourierCoil, s):
     radial_vector = _fourier_coil_radial_vector_centroid(coil, s)
     tangent       = _fourier_tangent(coil, s)
     return _frame_from_radial_vector(tangent, radial_vector)
+
+
+#=====================================================================================================================================================================================
+#                                                                           Converting curve to Fourier coefficients
+#=====================================================================================================================================================================================
+
+@partial(jax.jit, static_argnums = 1)
+def _xyz_to_fourier_coefficients(positions : jnp.ndarray, n_modes : int):
+    # positions is a 1D array.
+    N = positions.shape[0]
+
+    loc_fourier = jnp.fft.rfft(positions)
+    loc_fourier_cos  =   jnp.real(loc_fourier[1:]) / N * 2.0
+    loc_fourier_sin  = - jnp.imag(loc_fourier[1:]) / N * 2.0    
+    
+    centre = jnp.real(loc_fourier[0]) / N
+    if N%2==0:
+        # Nyquist mode only has a cosine component
+        loc_fourier_cos = loc_fourier_cos.at[-1].set(loc_fourier_cos[-1] * 0.5)
+    
+    
+    loc_fourier_cos = loc_fourier_cos[:n_modes]
+    loc_fourier_sin = loc_fourier_sin[:n_modes]
+    return loc_fourier_cos, loc_fourier_sin, centre
+    
+
+xyz_fourier_batched = jax.jit(jnp.vectorize(_xyz_to_fourier_coefficients, signature='(N)->(M),(M),()', excluded=(1,)))
+
+    
+@partial(jax.jit, static_argnums = 1)
+def curve_to_fourier_coefficients(positions : jnp.ndarray, n_modes : int = None):
+
+    positions_first_batch = jnp.moveaxis(positions, -1, 0)
+    fourier_cos, fourier_sin, centre = xyz_fourier_batched(positions_first_batch, n_modes)
+
+    return jnp.moveaxis(fourier_cos,0 , -1), jnp.moveaxis(fourier_sin,0, -1),  jnp.moveaxis(centre, 0, -1)
+
+@partial(jax.jit, static_argnums = 1)
+def convert_to_fourier_coil(coil : DiscreteCoil, n_modes : int = None):
+    '''
+    Convert a DiscreteCoil to a FourierCoil by computing Fourier coefficients from the discrete positions
+
+    Parameters
+    ----------
+    coil : DiscreteCoil
+        Discrete coil object
+    n_modes : int
+        Number of Fourier modes to use. If None, uses N/2 modes where N is the number of discrete points in the coil.
+
+    Returns
+    -------
+    FourierCoil
+        Fourier coil object
+    '''
+    fourier_cos, fourier_sin, centre = curve_to_fourier_coefficients(coil.positions, n_modes)
+    return FourierCoil(fourier_cos=fourier_cos, fourier_sin=fourier_sin, centre_i=centre)
+
+@partial(jax.jit, static_argnums = 1)
+def convert_to_fourier_coilset(coilset : CoilSet, n_modes : int = None):
+    '''
+    Convert a DiscreteCoil to a FourierCoil by computing Fourier coefficients from the discrete positions
+
+    Parameters
+    ----------
+    coil : DiscreteCoil
+        Discrete coil object
+    n_modes : int
+        Number of Fourier modes to use. If None, uses N/2 modes where N is the number of discrete points in the coil.
+
+    Returns
+    -------
+    FourierCoil
+        Fourier coil object
+    '''
+    fourier_cos, fourier_sin, centre = curve_to_fourier_coefficients(coilset.coils.positions, n_modes)
+    return CoilSet(FourierCoil(fourier_cos=fourier_cos, fourier_sin=fourier_sin, centre_i=centre), fourier_cos.shape[0])
+
+
+
 
 

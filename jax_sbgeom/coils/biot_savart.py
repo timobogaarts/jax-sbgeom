@@ -110,3 +110,9 @@ def biot_savart_batch(currents : jnp.ndarray, positions : jnp.ndarray, delta_lin
         batch_size = query_points.shape[0]
     f_batch = lambda x : biot_savart_single(currents, positions, delta_line_segments, x)
     return jax.lax.map(f_batch, query_points, batch_size=batch_size)
+
+def create_coilset_total_arrays(jax_coilset, currents, number_of_samples_per_coil):
+    coil_samples     = jax_coilset.position(jnp.linspace(0,1, number_of_samples_per_coil, endpoint=False))    
+    currents_stacked = jnp.stack([currents] * number_of_samples_per_coil, axis=-1)    
+    coil_diff        = jnp.roll(coil_samples, -1, axis=1) - coil_samples
+    return currents_stacked.reshape(-1) , coil_samples.reshape(-1,3), coil_diff.reshape(-1,3)
