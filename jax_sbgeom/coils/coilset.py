@@ -12,11 +12,12 @@ from .base_coil import FiniteSizeMethod, FiniteSizeCoil,  _compute_radial_vector
 @dataclass(frozen=True)
 class CoilSet:
     coils : Coil
+    n_coils : int
     
     @classmethod
     def from_list(cls, coils : List[Coil]):
         coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)
-        return cls(coils = coils_v)
+        return cls(coils = coils_v, n_coils = len(coils))
     
     def centre(self):
         return _coil_centre_vmap(self.coils)
@@ -60,14 +61,13 @@ class FiniteSizeCoilSet(CoilSet):
     @classmethod    
     def from_list(cls, coils : List[FiniteSizeCoil]):
         coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)        
-        return cls(coils = coils_v)
+        return cls(coils = coils_v, n_coils = len(coils))
     
     @classmethod
     def from_coils(cls, coils : List[Coil], method : Type[FiniteSizeMethod], *args):
         coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)
         finitesizemethod = method.setup_from_coils(coils_v, *args)
-        print(finitesizemethod)
-        return cls(FiniteSizeCoil(coils_v, method(*finitesizemethod)))
+        return cls(FiniteSizeCoil(coils_v, method(*finitesizemethod)), n_coils = len(coils))
         
 
     def radial_vector(self, s):

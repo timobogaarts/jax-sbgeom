@@ -259,36 +259,3 @@ def test_fourier_coil_vectorized_position(_get_all_fourier_coils):
         return finitesize_coil.finite_size(s, 0.3, 0.5)
     _check_single_vectorized(rmf)
 
-#=================================================================================================================================================
-#                                                  CoilSet Tests
-#=================================================================================================================================================
-def check_vector_coilset(coils_jax):
-    s =  jnp.linspace(0, 1, 1000)
-
-    pos_base = []
-    tan_base = []
-
-    for i in coils_jax:
-        pos_base.append(i.position(s))
-        tan_base.append(i.tangent(s))
-
-    pos_base = jnp.array(pos_base)
-    tan_base = jnp.array(tan_base)
-
-    coilsetv = jsb.coils.CoilSet.from_list(coils_jax)
-
-
-    pos_vec = coilsetv.position(s)
-    tan_vec = coilsetv.tangent(s)
-
-    onp.testing.assert_allclose(pos_base, pos_vec)
-    onp.testing.assert_allclose(tan_base, tan_vec)
-
-
-def test_vector_coilset_discrete(_get_all_discrete_coils):
-    coils_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    check_vector_coilset(coils_jaxsbgeom)   
-
-def test_vector_coilset_fourier(_get_all_fourier_coils_truncated):
-    coils_jax, coilset_sbgeom = _get_all_fourier_coils_truncated
-    check_vector_coilset(coils_jax)

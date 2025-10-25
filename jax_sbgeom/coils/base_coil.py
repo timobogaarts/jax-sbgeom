@@ -76,8 +76,20 @@ class FiniteSizeMethod(ABC):
         Vmap version of setup_from_coil
         This is required because there needs to be a choice made whether the extra arguments are vmapped over or not.
         Some coils, like RotationMinimizedFrame, require a static number, and this cannot be vmapped using the base vmap.
+        This base version results in all arguments being vmapped over.
+
+        Parameters
+        ----------
+        coil : Coil
+            Coil object (batched over)
+        args : tuple
+            Additional arguments for the setup (specific to the FiniteSizeMethod). Possibly batched over, depending on the FiniteSizeMethod.
+        Returns
+        -------
+        tuple
+            Data needed to instantiate the FiniteSizeMethod (batched over)
         '''
-        return (_vmap_setup_from_coil_base(cls, coil, *args),)
+        return _vmap_setup_from_coil_base(cls, coil, *args)
 
     @classmethod
     def from_coil(cls, coil : Coil, *args):
@@ -346,7 +358,15 @@ class RadialVectorFrame(FiniteSizeMethod):
 
     @classmethod
     def setup_from_coil(cls, coil : Coil, *args):
-        return (args[0])
+        return (args[0],)
+    
+    @classmethod
+    def setup_from_coils(cls, coil : Coil, *args):
+        '''
+        Since the radial vectors are precomputed, this just returns the same as setup_from_coil.
+        There is no function called that does any computation so there is no need to call a vmapped function.
+        '''
+        return (args[0],)
 
     @classmethod 
     def from_radial_vectors(cls, radial_vectors : jnp.ndarray):        
