@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jax-sbgeom"
 version = "0.1.0"
-description = "A JAX-based package for geometric operations"
+description = "A JAX-based package for stellarator geometric operations"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}

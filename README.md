@@ -2,6 +2,19 @@
 
 A JAX-based Python package for stellarator geometry
 
+
+# Installation
+
+The dependency on jax is purposefully left out. It can be installed with 
+
+```
+pip install jax
+```
+or with CUDA features 
+```
+pip install jax[cuda]
+```
+
 ## Structure
 
 The whole package is entirely functional, using dataclasses with static dispatching to reduce code duplication for e.g. different coils or flux surfaces.
