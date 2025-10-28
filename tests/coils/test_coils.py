@@ -259,3 +259,53 @@ def test_fourier_coil_vectorized_position(_get_all_fourier_coils):
         return finitesize_coil.finite_size(s, 0.3, 0.5)
     _check_single_vectorized(rmf)
 
+#=================================================================================================================================================
+#                                                  Converting Tests
+#=================================================================================================================================================
+
+@pytest.mark.parametrize("n_ftrunc", [None, 11])
+def test_converting_fourier_coils(_get_all_discrete_coils, n_ftrunc):
+    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+    fourier_coilset_sbgeom = SBGeom.Coils.Convert_to_Fourier_Coils(coilset_sbgeom, Nftrunc = n_ftrunc)
+    
+    fourier_coilset_jax= jsb.coils.fourier_coil.convert_to_fourier_coilset(jsb.coils.CoilSet.from_list(coilset_jaxsbgeom), n_modes = n_ftrunc)
+
+    for i in range(coilset_sbgeom.Number_of_Coils()):
+        coil_jsb = coilset_jaxsbgeom[i]
+        fourier_coil_sbgeom = fourier_coilset_sbgeom[i]
+                
+        fourier_coil_jaxsbgeom = jsb.coils.fourier_coil.convert_to_fourier_coil(coil_jsb, n_modes = n_ftrunc)
+
+        onp.testing.assert_allclose(fourier_coil_jaxsbgeom.fourier_cos, fourier_coil_sbgeom.Get_Fourier_Cos(), rtol=1e-12, atol=1e-12)
+        onp.testing.assert_allclose(fourier_coil_jaxsbgeom.fourier_sin, fourier_coil_sbgeom.Get_Fourier_Sin(), rtol=1e-12, atol=1e-12)
+        onp.testing.assert_allclose(fourier_coil_jaxsbgeom.centre_i, fourier_coil_sbgeom.Get_Centre(), rtol=1e-12, atol=1e-12)
+        onp.testing.assert_allclose(fourier_coilset_jax.coils.fourier_cos[i], fourier_coilset_sbgeom[i].Get_Fourier_Cos(), rtol=1e-12, atol=1e-12)
+        onp.testing.assert_allclose(fourier_coilset_jax.coils.fourier_sin[i], fourier_coilset_sbgeom[i].Get_Fourier_Sin(), rtol=1e-12, atol=1e-12)
+        onp.testing.assert_allclose(fourier_coilset_jax.coils.centre_i[i], fourier_coilset_sbgeom[i].Get_Centre(), rtol=1e-12, atol=1e-12)
+
+def test_equal_arclength(_get_all_fourier_coils):
+    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
+
+    n_points_sample  = 2531
+    n_points_desired = 1513
+    n_points_ea      = 511
+
+    arclength_f = jax.vmap(jsb.coils.fourier_coil._arc_length_fourier, in_axes=(0,None))
+
+    fourier_coilset = jsb.coils.CoilSet.from_list(coilset_jax)
+
+    coilset_new = jsb.coils.fourier_coil.convert_fourier_coilset_to_equal_arclength(fourier_coilset, n_points_sample, n_points_desired, method='pchip')
+    coilset_new_lin = jsb.coils.fourier_coil.convert_fourier_coilset_to_equal_arclength(fourier_coilset, n_points_sample, n_points_desired, method='linear')
+
+    def check_arclength_uniformity(coilset, n_points_ea, threshold):
+        arclength_f_ea = arclength_f(coilset, jnp.linspace(0.0, 1.0, n_points_ea))
+        arclength_avg =  jnp.mean(arclength_f_ea, axis=1) # average over the sampling points
+        uniformity_max = jnp.max(jnp.abs((arclength_f_ea - arclength_avg[:, None]) / arclength_avg[:, None]))        
+        assert uniformity_max < threshold
+        
+    check_arclength_uniformity(coilset_new.coils, n_points_ea, threshold=1e-3)
+    check_arclength_uniformity(coilset_new_lin.coils, n_points_ea, threshold=5e-3)
+
+
+    
+

@@ -10,6 +10,7 @@ from .discrete_coil import DiscreteCoil
 from jax_sbgeom.jax_utils.utils import stack_jacfwd
 from functools import partial
 from .coilset import CoilSet
+import jax_sbgeom
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -106,6 +107,7 @@ def _fourier_position(coil : FourierCoil, s):
 
 _grad_fourier_position = jax.jit(jnp.vectorize(stack_jacfwd(_fourier_position, argnums=1), excluded=(0,), signature='()->(3)'))
 
+@jax.jit
 def _fourier_tangent(coil : FourierCoil, s):
     '''
     Tangent vector along the coil as a function of arc length
@@ -127,7 +129,7 @@ def _fourier_tangent(coil : FourierCoil, s):
 
 _grad_grad_fourier_position = jax.jit(jnp.vectorize(stack_jacfwd(_fourier_tangent, argnums=1), excluded=(0,), signature='()->(3)'))
             
-
+@jax.jit
 def _fourier_normal(coil : FourierCoil, s):
     '''
     Normal vector along the coil as a function of arc length
@@ -148,6 +150,10 @@ def _fourier_normal(coil : FourierCoil, s):
     normal = tangent_deriv / jnp.linalg.norm(tangent_deriv, axis=-1, keepdims=True)
     return normal
 
+@jax.jit
+def _arc_length_fourier(fourier_coil, s):
+    tangent = _grad_fourier_position(fourier_coil, s)
+    return jnp.linalg.norm(tangent,axis=-1)
    
 # ===================================================================================================================================================================================
 #                                                                           Finite Sizes
@@ -222,9 +228,97 @@ def _xyz_to_fourier_coefficients(positions : jnp.ndarray, n_modes : int):
     return loc_fourier_cos, loc_fourier_sin, centre
     
 
-xyz_fourier_batched = jax.jit(jnp.vectorize(_xyz_to_fourier_coefficients, signature='(N)->(M),(M),()', excluded=(1,)))
+xyz_fourier_batched = jax.jit(jnp.vectorize(_xyz_to_fourier_coefficients, signature='(N)->(M),(M),()', excluded=(1,)), static_argnums=(1,))
 
+@partial(jax.jit, static_argnums = (1,2,3))
+def _sampling_positions_equal_arc_length(fourier_coil : FourierCoil, n_points_sample : int, n_points_desired : int, method : Literal['pchip', 'linear']):
+    '''
+    Resample a Fourier coil to have points equally spaced in arc length
+
+    Parameters
+    ----------
+    fourier_coil : FourierCoil
+        Fourier coil object
+    n_points_sample : int
+        Number of points sampled for resolving the arc length inverse
+    n_points_desired : int
+        Number of points to resample to
+    method : Literal['pchip', 'linear']
+        Method to use for resampling ('pchip' or 'linear')
+    Returns
+    -------
+    jnp.ndarray [n_points, 3]
+        Resampled positions along the coil
+    '''
     
+    s_sampling            = jnp.linspace(0.0, 1.0, n_points_sample, endpoint=False)
+    arc_length            = _arc_length_fourier(fourier_coil, s_sampling)        
+    if method == 'linear':
+        return jax_sbgeom.jax_utils.utils._resample_uniform_periodic_linear(arc_length, n_points_desired)
+    elif method == 'pchip':
+        return jax_sbgeom.jax_utils.utils._resample_uniform_periodic_pchip(arc_length, n_points_desired)    
+    else:
+        raise ValueError(f"Unknown method {method} for resampling to equal arc length")
+    
+@partial(jax.jit, static_argnums = (1,2,3))
+def convert_fourier_coil_to_equal_arclength(fourier_coil : FourierCoil, n_points_sample : int = None, n_points_desired : int = None, method : Literal['pchip', 'linear'] = 'pchip'):
+    '''
+    Resample a Fourier coil to have points equally spaced in arc length.
+
+    Parameters
+    ----------
+    fourier_coil : FourierCoil
+        Fourier coil object with N modes
+    n_points_sample : int
+        Number of points to sample the arc length inverse. If None, uses N*16 points.
+    n_points_desired : int
+        Number of points to resample to. If None, uses N*4 points.          
+    method : Literal['pchip', 'linear']
+        Method to use for interpolating the arc length inverse. 'pchip' is significantly better while not increasing runtime. Most of the time is spent on computing the Fourier sums.
+    Returns
+    -------
+    FourierCoil [n_points_desired, 3]
+        Resampled positions along the coil
+    '''
+    if n_points_sample is None:
+        n_points_sample = fourier_coil.fourier_cos.shape[0] * 16
+    if n_points_desired is None:
+        n_points_desired = fourier_coil.fourier_cos.shape[0] * 4
+
+    s_resampled = _sampling_positions_equal_arc_length(fourier_coil, n_points_sample, n_points_desired, method)    
+    resampling_positions = fourier_coil.position(s_resampled)
+    fourier_cos, fourier_sin, centre = curve_to_fourier_coefficients(resampling_positions) 
+    return FourierCoil(fourier_cos=fourier_cos, fourier_sin=fourier_sin, centre_i=centre)
+
+_convert_fourier_coilset_to_equal_arclength_internal = jax.jit(jax.vmap(convert_fourier_coil_to_equal_arclength, in_axes=(0,None,None,None)), static_argnums =(1,2,3))
+
+@partial(jax.jit, static_argnums = (1,2,3))
+def convert_fourier_coilset_to_equal_arclength(fourier_coilset : CoilSet, n_points_sample : int = None, n_points_desired : int = None, method : Literal['pchip', 'linear'] = 'pchip'):
+    '''
+    Resample a Fourier coilset to have points equally spaced in arc length.
+
+      Parameters
+    ----------
+    fourier_coil : FourierCoil
+        Fourier coil object with N modes
+    n_points_sample : int
+        Number of points to sample the arc length inverse. If None, uses N*16 points.
+    n_points_desired : int
+        Number of points to resample to. If None, uses N*4 points.          
+    method : Literal['pchip', 'linear']
+        Method to use for interpolating the arc length inverse. 'pchip' is significantly better while not increasing runtime. Most of the time is spent on computing the Fourier sums.
+    Returns
+    -------
+    FourierCoil [n_coils, n_points_desired, 3]
+        Resampled positions along the coil
+    '''
+    return CoilSet(_convert_fourier_coilset_to_equal_arclength_internal(fourier_coilset.coils, n_points_sample, n_points_desired, method), fourier_coilset.n_coils)
+
+
+
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                                           Converting curve to Fourier coefficients: Convenience
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 @partial(jax.jit, static_argnums = 1)
 def curve_to_fourier_coefficients(positions : jnp.ndarray, n_modes : int = None):
 
@@ -263,7 +357,7 @@ def convert_to_fourier_coilset(coilset : CoilSet, n_modes : int = None):
     coil : DiscreteCoil
         Discrete coil object
     n_modes : int
-        Number of Fourier modes to use. If None, uses N/2 modes where N is the number of discrete points in the coil.
+        Number of Fourier modes to use. If None, uses (N+1)//2 modes where N is the number of discrete points in the coil.
 
     Returns
     -------
@@ -272,8 +366,6 @@ def convert_to_fourier_coilset(coilset : CoilSet, n_modes : int = None):
     '''
     fourier_cos, fourier_sin, centre = curve_to_fourier_coefficients(coilset.coils.positions, n_modes)
     return CoilSet(FourierCoil(fourier_cos=fourier_cos, fourier_sin=fourier_sin, centre_i=centre), fourier_cos.shape[0])
-
-
 
 
 
