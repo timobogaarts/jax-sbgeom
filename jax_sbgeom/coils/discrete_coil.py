@@ -75,7 +75,24 @@ class DiscreteCoil(Coil):
         return self._centre_i
     
     def normal(self, s):
+        '''
+        Normal vector along the coil as a function of arc length
+        Not defined for DiscreteCoil
+        
+        Parameters
+        ----------
+        s : jnp.ndarray
+            Arc length(s) along the coil
+        Returns
+        -------
+        jnp.ndarray
+            Normal vector(s) along the coil (jnp.nan)
+        '''
         return jnp.full(s.shape + (3,), jnp.nan)
+    
+    def reverse(self):
+        return _discrete_coil_reverse(self)
+        
     
 # ===================================================================================================================================================================================
 #                                                                           Implementation
@@ -105,6 +122,11 @@ def _discrete_coil_tangent(discrete_coil : DiscreteCoil, s):
     tangent = pos_i1 - pos_i0
     tangent = tangent / jnp.linalg.norm(tangent, axis=-1, keepdims=True)
     return tangent
+
+@jax.jit 
+def _discrete_coil_reverse(discrete_coil : DiscreteCoil):
+    reversed_positions = jnp.concatenate([discrete_coil.positions[0:1], discrete_coil.positions[1:][::-1,]], axis=0)
+    return DiscreteCoil.from_positions(reversed_positions)
    
 # ===================================================================================================================================================================================
 #                                                                           Finite Sizes

@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from dataclasses import dataclass
 from typing import Type
-from .base_coil import coil_position, coil_tangent, coil_normal, coil_centre
+from .base_coil import coil_position, coil_tangent, coil_normal, coil_centre, ensure_coil_clockwise
 
 from .base_coil import FiniteSizeMethod, FiniteSizeCoil,  _compute_radial_vector, _compute_finite_size_frame, _compute_finite_size, _setup_finitesizemethod_from_coil
 
@@ -48,6 +48,8 @@ _coil_normal_vmap_same_s        = jax.jit(jax.vmap(coil_normal, in_axes=(0, None
 _coil_position_vmap_different_s = jax.jit(jax.vmap(coil_position, in_axes=(0, 0)))
 _coil_tangent_vmap_different_s  = jax.jit(jax.vmap(coil_tangent, in_axes=(0, 0)))
 _coil_normal_vmap_different_s   = jax.jit(jax.vmap(coil_normal, in_axes=(0, 0)))
+
+_ensure_coilset_clockwise_vmap = jax.jit(jax.vmap(ensure_coil_clockwise, in_axes=(0,)))
 
 _radial_vector_same_s           = jax.jit(jax.vmap(_compute_radial_vector, in_axes=(0, 0, None)))
 _finite_size_frame_same_s       = jax.jit(jax.vmap(_compute_finite_size_frame, in_axes=(0, 0, None)))
@@ -94,3 +96,36 @@ class FiniteSizeCoilSet(CoilSet):
     
     def finite_size_different_s(self, s, width_radial : float, width_phi : float):
         return _finite_size_different_s(self.coils.coil, self.coils.finite_size_method, s, width_radial, width_phi)   
+    
+
+
+
+@jax.jit
+def order_coilset_phi(coilset : CoilSet):
+    '''
+    Orders a CoilSet in increasing toroidal angle (phi). Works with both CoilSet and FiniteSizeCoilSet.
+
+    Parameters:
+        coilset (CoilSet) : CoilSet to order
+    Returns:
+        CoilSet           : ordered Coil_Set       
+    '''
+
+    phis = jnp.arctan2(coilset.centre()[:,1], coilset.centre()[:,0])
+    
+    permutation = jnp.argsort(phis)
+    new_coils = jax.tree.map(lambda x : jnp.take(x,permutation, axis=0), coilset.coils)
+
+    return type(coilset)(coils=new_coils, n_coils=coilset.n_coils)
+    
+
+def ensure_coilset_clockwise(coilset : CoilSet):
+    '''
+    Ensures that all coils in a CoilSet are defined in clockwise direction.
+
+    Parameters:
+        coilset (CoilSet) : CoilSet to ensure clockwise
+    Returns:
+        CoilSet           : CoilSet with all coils clockwise       
+    '''
+    return type(coilset)(_ensure_coilset_clockwise_vmap(coilset.coils), n_coils=coilset.n_coils)

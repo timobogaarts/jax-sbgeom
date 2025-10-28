@@ -26,6 +26,11 @@ class Coil(ABC):
     @abstractmethod
     def normal(self, s):
         ...
+        
+    @abstractmethod
+    def reverse(self):
+        ...
+        
 
 # Functional versions for vmapping
 def coil_position(coil: Coil, s):
@@ -39,6 +44,9 @@ def coil_centre(coil: Coil):
 
 def coil_normal(coil: Coil, s):
     return coil.normal(s)
+
+def coil_reverse(coil: Coil):
+    return coil.reverse()
 # ===================================================================================================================================================================================
 #                                                                           Finite Size Utility Methods
 # ===================================================================================================================================================================================
@@ -540,3 +548,28 @@ _angle_axis_to_matrix_vmap = jax.vmap(_angle_axis_to_matrix, in_axes=(0, 0))
 #                                                                           Convenience functions
 # ===================================================================================================================================================================================
 
+def _coil_clockwise(coil):
+    s = jnp.linspace(0,1,30, endpoint=False)
+    pos = coil.position(s) 
+    centre = jnp.mean(pos, axis=0)    
+    pos_R = jnp.sqrt(pos[:,0]**2 + pos[:,1]**2)
+    pos_Z = pos[:,2]
+    pos_R_c = jnp.mean(pos_R)
+    pos_Z_c = jnp.mean(pos_Z)
+    r_offset = pos_R - pos_R_c
+    z_offset = pos_Z - pos_Z_c        
+    angles = jnp.arctan2(r_offset, z_offset)    
+    return jnp.sum(jnp.diff(jnp.unwrap(angles))) > 0    
+
+def ensure_coil_clockwise(coil : Coil):
+    '''
+    Ensure that the coils in the coilset are ordered in clockwise direction (looking from +Z axis).
+
+    Parameters:
+        coilset (CoilSet) : CoilSet to ensure clockwise ordering
+    Returns:
+        CoilSet           : CoilSet with clockwise ordering       
+    '''
+    
+    return jax.lax.cond(_coil_clockwise(coil), lambda _ : coil.reverse(), lambda _ : coil, operand=None)
+    
