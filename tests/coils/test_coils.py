@@ -7,6 +7,7 @@ import jax
 import time
 
 from functools import partial
+from typing import Type, List
 
 import pytest
 from functools import lru_cache
@@ -307,5 +308,126 @@ def test_equal_arclength(_get_all_fourier_coils):
     check_arclength_uniformity(coilset_new_lin.coils, n_points_ea, threshold=5e-3)
 
 
+#=================================================================================================================================================
+#                                                  Reversal
+#=================================================================================================================================================    
+classes          = [jsb.coils.CentroidFrame, jsb.coils.RotationMinimizedFrame, jsb.coils.RadialVectorFrame, jsb.coils.FrenetSerretFrame]
+classes_discrete = classes[:-1]  # Frenet-Serret frame not implemented for discrete coils
+
+def _radial_vector(coil_i, n_coils):
+    x = jnp.cos(jnp.linspace(0, 2*jnp.pi, 100) + coil_i  / n_coils * 2 * jnp.pi)
+    y = jnp.sin(jnp.linspace(0, 2*jnp.pi, 100) + coil_i  / n_coils * 2 * jnp.pi)
+    z = jnp.zeros_like(x)
+    return jnp.stack([x, y, z], axis=-1)
+
+_radial_vectors = jax.vmap(_radial_vector, in_axes=(0, None))
+
+def additional_arguments_per_coil(frame_class : Type[jsb.coils.base_coil.FiniteSizeMethod], coil_i : int, ncoils : int):
+    if frame_class == jsb.coils.RotationMinimizedFrame:
+        return (10,)
+    elif frame_class == jsb.coils.RadialVectorFrame:
+        return (_radial_vector(coil_i, ncoils), )
+    else:
+        return ()
+def additional_arguments(frame_class : Type[jsb.coils.base_coil.FiniteSizeMethod], coils_list : List):
+    if frame_class == jsb.coils.RotationMinimizedFrame:
+        return (10,)
+    elif frame_class == jsb.coils.RadialVectorFrame:
+        ncoils = len(coils_list)
+        radial_vectors = _radial_vectors(jnp.arange(ncoils), ncoils)
+        return (radial_vectors, )
+    else:
+        return ()        
+
+
+def check_reverse(coil):
+    if isinstance(coil, jsb.coils.DiscreteCoil):
+        # reversed discretecoils do not have the same tangent on *exactly* the discrete points of the coil: 
+        #  the forward derivative is different on those points.
+        # so we use the parametrisation without begin and endpoint and without the discrete points itself
+        # if 211 (prime) > number of points in coil, this works fine
+        assert coil.Number_of_Points() < 211, "Test needs to be adjusted for coils with more than 211 points"
+        s         = jnp.linspace(0, 1.0,211, endpoint=False)[1:]
+        s_reverse = jnp.linspace(0,-1.0,211, endpoint=False)[1:]
+    else:
+        s         = jnp.linspace(0, 1.0,100)
+        s_reverse = jnp.linspace(0,-1.0,100)
+
+    rev_coil = coil.reverse_parametrisation()
+    position_original = coil.position(s)
+    position_reversed = rev_coil.position(s_reverse)
+    onp.testing.assert_allclose(position_original, position_reversed)
+
+    tangent_original = coil.tangent(s)
+    tangent_reversed = rev_coil.tangent(s_reverse)    
+    onp.testing.assert_allclose(tangent_original, -tangent_reversed)
+
+def check_reverse_finite_size(finitesize_coil):
+    if isinstance(finitesize_coil.coil, jsb.coils.DiscreteCoil):
+        # discretecoils do not have the same tangent on *exactly* the discrete points of the coil..
+        #  the forward derivative is different on those points.
+        # so we use the parametrisation without being and endpoint
+        s         = jnp.linspace(0, 1.0,211, endpoint=False)[1:]
+        s_reverse = jnp.linspace(0,-1.0,211, endpoint=False)[1:]
+    else:
+        s = jnp.linspace(0,1,100)
+        s_reverse = jnp.linspace(0,-1,100)
     
 
+    reversed_finitesize_coil = finitesize_coil.reverse_parametrisation()
+    position_original = finitesize_coil.position(s)
+    position_reversed = reversed_finitesize_coil.position(s_reverse)
+
+    print(finitesize_coil.finite_size_method)
+    radial_vector_original = finitesize_coil.radial_vector(s)
+    radial_vector_reversed = reversed_finitesize_coil.radial_vector(s_reverse)
+
+    tangent_original = finitesize_coil.tangent(s)
+    tangent_reversed = reversed_finitesize_coil.tangent(s_reverse)
+    
+    
+    onp.testing.assert_allclose(position_original,      position_reversed)        
+    onp.testing.assert_allclose(tangent_original,      -tangent_reversed)    
+    onp.testing.assert_allclose(radial_vector_original, radial_vector_reversed)
+
+    finitesize_frame_original = finitesize_coil.finite_size_frame(s)
+    finitesize_frame_reversed = reversed_finitesize_coil.finite_size_frame(s_reverse)
+    # the tangent vector will be reversed, but the radial vector the same, so
+    # we need to reverse the tangent vector in the reversed frame to compare
+    finitesize_frame_reversed_corrected = finitesize_frame_reversed.at[...,1,:].set(-finitesize_frame_reversed[...,1,:])
+
+    onp.testing.assert_allclose(finitesize_frame_original, finitesize_frame_reversed_corrected)
+
+    width_phi = 0.245
+    width_radial = 0.123
+    finitesize_original = finitesize_coil.finite_size(s, width_phi, width_radial)
+    finitesize_reversed = reversed_finitesize_coil.finite_size(s_reverse, width_phi, width_radial)
+
+    # finite size has    
+    #  The finite size is in the following order:
+    # v_0 : + radial, + phi
+    # v_1 : - radial, + phi
+    # v_2 : - radial, - phi
+    # v_3 : + radial, - phi
+    # since phi -> -phi in the reversed coil
+    # we need to swap v_0 with v_3 and v_1 with v_2 to compare
+    # i can just flip the arrays around the first axis.    
+    finitesize_reversed_corrected = finitesize_reversed[:, ::-1, :]
+    onp.testing.assert_allclose(finitesize_original, finitesize_reversed_corrected)
+
+def _get_finitesize_coilset(coils_jax, frame_class : Type[jsb.coils.base_coil.FiniteSizeMethod]):
+    #additional_args = additional_arguments_per_coil(frame_class, coils_jax, len(coils_jax))
+    finitesize_coilset = [jsb.coils.base_coil.FiniteSizeCoil(coil_jax, frame_class.from_coil(coil_jax, *additional_arguments_per_coil(frame_class, i, len(coils_jax)))) for i, coil_jax in enumerate(coils_jax)]
+    return finitesize_coilset
+
+@pytest.mark.parametrize("frame_class", classes_discrete)
+def test_finitesize_coilset_reverse_discrete(_get_all_discrete_coils, frame_class):
+    coils_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+    coils_finitesize = _get_finitesize_coilset(coils_jaxsbgeom, frame_class)
+    [check_reverse_finite_size(coils_finitesize[i]) for i in range(len(coils_jaxsbgeom))]
+
+@pytest.mark.parametrize("frame_class", classes)
+def test_finitesize_coilset_reverse_fourier(_get_all_fourier_coils, frame_class):
+    coils_jaxsbgeom, coilset_sbgeom = _get_all_fourier_coils
+    coils_finitesize = _get_finitesize_coilset(coils_jaxsbgeom, frame_class)
+    [check_reverse_finite_size(coils_finitesize[i]) for i in range(len(coils_jaxsbgeom))]

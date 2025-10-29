@@ -67,8 +67,8 @@ class FourierCoil(Coil):
     def centre(self):
         return self.centre_i
     
-    def reverse(self):
-        return _fourier_reverse(self)
+    def reverse_parametrisation(self):
+        return _fourier_reverse_parametrisation(self)
 
 #===================================================================================================================================================================
 #                                                                           Implementation  
@@ -162,7 +162,7 @@ def _arc_length_fourier(fourier_coil, s):
     tangent = _grad_fourier_position(fourier_coil, s)
     return jnp.linalg.norm(tangent,axis=-1)
 @jax.jit
-def _fourier_reverse(coil : FourierCoil):    
+def _fourier_reverse_parametrisation(coil : FourierCoil):    
     return FourierCoil(fourier_cos=coil.fourier_cos, fourier_sin= -1.0 * coil.fourier_sin, centre_i=coil.centre_i)
    
 # ===================================================================================================================================================================================

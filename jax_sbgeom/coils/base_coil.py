@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as onp
 from typing import Literal
-from jax_sbgeom.jax_utils.utils import interpolate_array_modulo_broadcasted
+from jax_sbgeom.jax_utils.utils import interpolate_array_modulo_broadcasted, _reverse_except_begin
 from functools import partial
 from typing import Type
 
@@ -28,7 +28,7 @@ class Coil(ABC):
         ...
         
     @abstractmethod
-    def reverse(self):
+    def reverse_parametrisation(self):
         ...
         
 
@@ -45,8 +45,8 @@ def coil_centre(coil: Coil):
 def coil_normal(coil: Coil, s):
     return coil.normal(s)
 
-def coil_reverse(coil: Coil):
-    return coil.reverse()
+def coil_reverse_parametrisation(coil: Coil):
+    return coil.reverse_parametrisation()
 # ===================================================================================================================================================================================
 #                                                                           Finite Size Utility Methods
 # ===================================================================================================================================================================================
@@ -107,9 +107,22 @@ class FiniteSizeMethod(ABC):
     @abstractmethod
     def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):        
         ...
+    
+    def reverse_parametrisation(self):
+        ''''
+        Reverse the finite size method. By default, does nothing.
+        Some finite size methods may need to do something different (i.e. interpolated radial frames need to reverse their data)
+
+        Returns
+        -------
+        FiniteSizeMethod
+        '''
+        return self
 
     def compute_finite_size_frame(self, coil : Coil, s : jnp.ndarray):
         return _compute_finite_size_frame(coil, self, s)
+    
+    
 
 @jax.jit
 def _compute_radial_vector(coil : Coil, finitesizemethod : FiniteSizeMethod, s : jnp.ndarray):
@@ -176,6 +189,9 @@ class FiniteSizeCoil(Coil):
         
     def normal(self):        
         return self.coil.centre()    
+    
+    def reverse_parametrisation(self):
+        return FiniteSizeCoil(self.coil.reverse_parametrisation(), self.finite_size_method.reverse_parametrisation())
 
     def radial_vector(self, s):
         '''
@@ -379,6 +395,9 @@ class RadialVectorFrame(FiniteSizeMethod):
     @classmethod 
     def from_radial_vectors(cls, radial_vectors : jnp.ndarray):        
         return cls(radial_vectors_i = radial_vectors)
+    
+    def reverse_parametrisation(self):
+        return type(self)(_reverse_except_begin(self.radial_vectors_i))
         
     def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
         # Coil was already used to compute radial_vectors_i
@@ -548,7 +567,9 @@ _angle_axis_to_matrix_vmap = jax.vmap(_angle_axis_to_matrix, in_axes=(0, 0))
 #                                                                           Convenience functions
 # ===================================================================================================================================================================================
 
-def _coil_clockwise(coil):
+@jax.jit
+def _coil_rotation_positive(coil):
+
     s = jnp.linspace(0,1,30, endpoint=False)
     pos = coil.position(s) 
     centre = jnp.mean(pos, axis=0)    
@@ -558,18 +579,19 @@ def _coil_clockwise(coil):
     pos_Z_c = jnp.mean(pos_Z)
     r_offset = pos_R - pos_R_c
     z_offset = pos_Z - pos_Z_c        
-    angles = jnp.arctan2(r_offset, z_offset)    
+    angles = jnp.arctan2(z_offset, r_offset)    
     return jnp.sum(jnp.diff(jnp.unwrap(angles))) > 0    
 
-def ensure_coil_clockwise(coil : Coil):
+@partial(jax.jit)
+def ensure_coil_rotation(coil : Coil, positive_rotation : bool):    
     '''
-    Ensure that the coils in the coilset are ordered in clockwise direction (looking from +Z axis).
+    Ensure that the coils in the coilset are ordered in the same rotation (positive is increasing angle when looking at R-Z cross section)
 
     Parameters:
-        coilset (CoilSet) : CoilSet to ensure clockwise ordering
+        coil (Coil) : Coil to check
+        positive_rotation (bool) : Whether the coil should have positive rotation
     Returns:
-        CoilSet           : CoilSet with clockwise ordering       
-    '''
-    
-    return jax.lax.cond(_coil_clockwise(coil), lambda _ : coil.reverse(), lambda _ : coil, operand=None)
+        Coil       : Coil with ensured rotation
+    '''    
+    return jax.lax.cond(_coil_rotation_positive(coil) == positive_rotation , lambda _ : coil, lambda _ : coil.reverse_parametrisation(), operand=None)
     

@@ -5,7 +5,8 @@ import jax.numpy as jnp
 import numpy as onp
 from typing import Literal
 from .base_coil import Coil, _finite_size_from_data,_radial_vector_centroid_from_data, _frame_from_radial_vector
-from jax_sbgeom.jax_utils.utils import interpolate_array_modulo_broadcasted, interpolate_fractions_modulo
+from jax_sbgeom.jax_utils.utils import interpolate_array_modulo_broadcasted, interpolate_fractions_modulo, _reverse_except_begin
+
 import warnings
 from functools import partial
 from .base_coil import _rmf_radial_vector_from_data
@@ -90,8 +91,8 @@ class DiscreteCoil(Coil):
         '''
         return jnp.full(s.shape + (3,), jnp.nan)
     
-    def reverse(self):
-        return _discrete_coil_reverse(self)
+    def reverse_parametrisation(self):
+        return _discrete_coil_reverse_parametrisation(self)
         
     
 # ===================================================================================================================================================================================
@@ -123,10 +124,11 @@ def _discrete_coil_tangent(discrete_coil : DiscreteCoil, s):
     tangent = tangent / jnp.linalg.norm(tangent, axis=-1, keepdims=True)
     return tangent
 
+
+
 @jax.jit 
-def _discrete_coil_reverse(discrete_coil : DiscreteCoil):
-    reversed_positions = jnp.concatenate([discrete_coil.positions[0:1], discrete_coil.positions[1:][::-1,]], axis=0)
-    return DiscreteCoil.from_positions(reversed_positions)
+def _discrete_coil_reverse_parametrisation(discrete_coil : DiscreteCoil):    
+    return DiscreteCoil.from_positions(_reverse_except_begin(discrete_coil.positions))
    
 # ===================================================================================================================================================================================
 #                                                                           Finite Sizes
