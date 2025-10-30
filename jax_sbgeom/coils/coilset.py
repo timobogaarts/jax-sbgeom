@@ -11,14 +11,12 @@ from .base_coil import FiniteSizeMethod, FiniteSizeCoil,  _compute_radial_vector
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class CoilSet:
-    coils : Coil
-    n_coils : int
+    coils : Coil    
     
     @classmethod
     def from_list(cls, coils : List[Coil]):
         coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)
-        return cls(coils = coils_v, n_coils = len(coils))
-    
+        return cls(coils = coils_v)            
     def centre(self):
         return _coil_centre_vmap(self.coils)
     
@@ -38,6 +36,11 @@ class CoilSet:
     
     def __getitem__(self, idx):
         return jax.tree.map(lambda x: x[idx], self.coils)
+    
+    @property
+    def n_coils(self):
+        return jax.tree_util.tree_flatten(self.coils)[0][0].shape[0]
+
                 
 
 _coil_centre_vmap               = jax.jit(jax.vmap(coil_centre, in_axes=(0,)))
@@ -66,18 +69,18 @@ class FiniteSizeCoilSet(CoilSet):
     @classmethod    
     def from_list(cls, coils : List[FiniteSizeCoil]):
         coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)        
-        return cls(coils = coils_v, n_coils = len(coils))
+        return cls(coils = coils_v)
     
     @classmethod
     def from_coils(cls, coils : List[Coil], method : Type[FiniteSizeMethod], *args):
         coils_v = jax.tree.map(lambda *xs : jnp.stack(xs), *coils)
         finitesizemethod = method.setup_from_coils(coils_v, *args)
-        return cls(FiniteSizeCoil(coils_v, method(*finitesizemethod)), n_coils = len(coils))
+        return cls(FiniteSizeCoil(coils_v, method(*finitesizemethod)))
     
     @classmethod
     def from_coilset(cls, coilset : CoilSet, method : Type[FiniteSizeMethod], *args):
         finitesizemethod = method.setup_from_coils(coilset.coils, *args)
-        return cls(FiniteSizeCoil(coilset.coils, method(*finitesizemethod)), n_coils = coilset.n_coils)
+        return cls(FiniteSizeCoil(coilset.coils, method(*finitesizemethod)))
 
     def radial_vector(self, s):
         return _radial_vector_same_s(self.coils.coil, self.coils.finite_size_method, s)
@@ -116,7 +119,7 @@ def order_coilset_phi(coilset : CoilSet):
     permutation = jnp.argsort(phis)
     new_coils = jax.tree.map(lambda x : jnp.take(x,permutation, axis=0), coilset.coils)
 
-    return type(coilset)(coils=new_coils, n_coils=coilset.n_coils)
+    return type(coilset)(coils=new_coils)
     
 
 def ensure_coilset_rotation(coilset : CoilSet, positive_rotation : bool):
@@ -128,4 +131,4 @@ def ensure_coilset_rotation(coilset : CoilSet, positive_rotation : bool):
     Returns:
         CoilSet           : CoilSet with all coils rotation
     '''
-    return type(coilset)(_ensure_coilset_rotation_vmap(coilset.coils, positive_rotation), n_coils=coilset.n_coils)
+    return type(coilset)(_ensure_coilset_rotation_vmap(coilset.coils, positive_rotation))

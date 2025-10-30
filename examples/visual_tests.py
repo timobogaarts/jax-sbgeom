@@ -7,17 +7,27 @@ import numpy as onp
 import sys 
 import os
 
-project_root = os.path.abspath(os.path.join(os.getcwd(), ".."))
-sys.path.append(project_root)
-vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
 
-from jax_sbgeom.flux_surfaces.flux_surfaces_base import _cartesian_position_interpolated_jit, _cylindrical_position_interpolated, _cartesian_position_interpolated_grad, ToroidalExtent
-from tests.flux_surfaces.test_flux_surface_base import test_position, _get_flux_surfaces, _sampling_grid, _1d_sampling_grid, test_normals, test_meshing_surface, test_principal_curvatures, _get_all_closed_surfaces, test_all_closed_surfaces
-#
+from functools import partial
+import jax_sbgeom.coils as jsc
+import jax_sbgeom.flux_surfaces as jsf
+
+from jax_sbgeom.jax_utils.utils import _mesh_to_pyvista_mesh
+import pyvista as pv
+import jax_sbgeom.coils.coil_winding_surface as cws
+import h5py
+
 import pyvista as pv
 
 
 def run_closed_surfaces_test(vmec_i):
+        
+    project_root = os.path.abspath(os.path.join(os.getcwd(), ".."))
+    sys.path.append(project_root)
+    vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
+
+
+    from tests.flux_surfaces.test_flux_surface_base import  _get_flux_surfaces, _get_all_closed_surfaces
     def _get_flux_surfaces(vmec_file):
         fs_jax    = jsb.flux_surfaces.FluxSurface.from_hdf5(vmec_file)    
         return fs_jax
@@ -46,6 +56,66 @@ def run_closed_surfaces_test(vmec_i):
 
         plotter.show()
     plot_all_surfaces(surfaces)
+
+def optimize_cws_and_plot(coil_i : int = 2, convert_to_fourier : bool = True):
+   
+    coil_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
+
+    coil_file = coil_files[coil_i]
+
+    with h5py.File(coil_file) as f:
+        positions = jnp.array(f['Dataset1'])
+
+    jax_coils   = [jsc.DiscreteCoil.from_positions(positions[i]) for i in range(positions.shape[0])]    
+    jax_coilset = jsc.CoilSet.from_list(jax_coils)    
+    if convert_to_fourier:
+        coilset           = jsc.fourier_coil.convert_to_fourier_coilset(jax_coilset)
+    else:
+        coilset = jax_coilset
+        
+    u_penalty = 1.0
+    r_penalty = 0.1
+    (xarr, optimizer_state), coilset_ordered = cws.optimize_coil_surface(coilset, uniformity_penalty=u_penalty, repulsive_penalty=r_penalty, optimization_settings=jsb.jax_utils.optimize.OptimizationSettings(max_iterations=500, tolerance=1e-4))
+    
+    
+
+    x_base = jnp.ones(xarr.shape[0])
+
+    def create_coil_splines_figure(xarr, xarr_opt, coilset):
+
+        finitesize_coilset = jsc.FiniteSizeCoilSet.from_coilset(coilset, jsc.RotationMinimizedFrame, 100)
+
+        
+
+        base_mesh = _mesh_to_pyvista_mesh(*jsc.mesh_coilset_surface(finitesize_coilset, 100, 0.2, 0.2))
+
+        sarr_base = jsc.coil_winding_surface._create_total_s(xarr, coilset.n_coils)
+        sarr_opt  = jsc.coil_winding_surface._create_total_s(xarr_opt, coilset.n_coils)
+
+        positions     = coilset.position_different_s(sarr_base)
+        positions_opt = coilset.position_different_s(sarr_opt)
+    
+
+        coil_surface_non_opt = _mesh_to_pyvista_mesh(jnp.moveaxis(positions, 1,0).reshape(-1,3), jsb.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions.shape[1], positions.shape[0],True, True))
+        coil_surface_opt     = _mesh_to_pyvista_mesh(jnp.moveaxis(positions_opt, 1,0).reshape(-1,3), jsb.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions.shape[1], positions.shape[0],True, True))
+        
+
+
+
+        plotter = pv.Plotter(shape=(1,2))
+        plotter.subplot(0,0)    
+        
+        plotter.add_mesh(base_mesh, opacity = 1.0)
+        plotter.add_mesh(coil_surface_non_opt, opacity = 1.0, show_edges = True)
+
+        plotter.subplot(0,1)            
+        plotter.add_mesh(base_mesh,opacity = 1.0)
+        plotter.add_mesh(coil_surface_opt, opacity = 1.0, show_edges = True)
+        plotter.link_views()
+        plotter.show()
+
+
+    create_coil_splines_figure(x_base, xarr, coilset_ordered)
 
 if __name__ == "__main__":
     run_closed_surfaces_test(vmec_i=1)

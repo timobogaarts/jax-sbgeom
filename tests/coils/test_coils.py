@@ -339,29 +339,6 @@ def additional_arguments(frame_class : Type[jsb.coils.base_coil.FiniteSizeMethod
     else:
         return ()        
 
-
-def check_reverse(coil):
-    if isinstance(coil, jsb.coils.DiscreteCoil):
-        # reversed discretecoils do not have the same tangent on *exactly* the discrete points of the coil: 
-        #  the forward derivative is different on those points.
-        # so we use the parametrisation without begin and endpoint and without the discrete points itself
-        # if 211 (prime) > number of points in coil, this works fine
-        assert coil.Number_of_Points() < 211, "Test needs to be adjusted for coils with more than 211 points"
-        s         = jnp.linspace(0, 1.0,211, endpoint=False)[1:]
-        s_reverse = jnp.linspace(0,-1.0,211, endpoint=False)[1:]
-    else:
-        s         = jnp.linspace(0, 1.0,100)
-        s_reverse = jnp.linspace(0,-1.0,100)
-
-    rev_coil = coil.reverse_parametrisation()
-    position_original = coil.position(s)
-    position_reversed = rev_coil.position(s_reverse)
-    onp.testing.assert_allclose(position_original, position_reversed)
-
-    tangent_original = coil.tangent(s)
-    tangent_reversed = rev_coil.tangent(s_reverse)    
-    onp.testing.assert_allclose(tangent_original, -tangent_reversed)
-
 def check_reverse_finite_size(finitesize_coil):
     if isinstance(finitesize_coil.coil, jsb.coils.DiscreteCoil):
         # discretecoils do not have the same tangent on *exactly* the discrete points of the coil..

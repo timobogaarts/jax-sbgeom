@@ -155,3 +155,29 @@ def test_finitesize_coilset_fourier(_get_all_fourier_coils_truncated, frame_clas
     coils_jax, coilset_sbgeom = _get_all_fourier_coils_truncated
     check_finitesize_coilset(coils_jax, frame_class)
 
+#-------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                 Coil Winding Surface Optimization Test
+#-------------------------------------------------------------------------------------------------------------------------------------------------
+
+def check_optimization(coilset_jax):
+    import optax
+    coilset_jaxsbgeom = jsb.coils.CoilSet.from_list(coilset_jax)
+    (xarr, optimizer_state), coilset_ordered = jsb.coils.coil_winding_surface.optimize_coil_surface(coilset_jaxsbgeom, optimization_settings=jsb.jax_utils.optimize.OptimizationSettings(max_iterations=500, tolerance=1e-4))
+    grad     = optax.tree.get(optimizer_state, 'grad')
+    err      = optax.tree.norm(grad)
+    assert err < 1e-4
+    
+
+@pytest.mark.slow
+def test_cws_optimization_discrete(_get_all_discrete_coils):
+   
+    coils_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+    check_optimization(coils_jaxsbgeom)
+
+@pytest.mark.slow
+def test_cws_optimization_fourier(_get_all_fourier_coils_truncated):
+    coils_jax, coilset_sbgeom = _get_all_fourier_coils_truncated
+    check_optimization(coils_jax)   
+   
+
+    

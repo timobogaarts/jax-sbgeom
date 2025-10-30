@@ -88,5 +88,5 @@ def mesh_coilset_surface(coils : FiniteSizeCoilSet, n_s : int, width_radial : fl
         Connectivity array of the meshed coil surface
     '''
     finite_size_lines = coils.finite_size(jnp.linspace(0, 1.0, n_s, endpoint=False), width_radial, width_phi)        
-    connectivity = _mesh_rectangular_finite_sized_coilset_connectivity(int(coils.n_coils), n_s, 4, True)
+    connectivity = _mesh_rectangular_finite_sized_coilset_connectivity(coils.n_coils, n_s, 4, True)
     return finite_size_lines.reshape(-1, 3), connectivity

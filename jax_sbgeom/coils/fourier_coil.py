@@ -322,7 +322,7 @@ def convert_fourier_coilset_to_equal_arclength(fourier_coilset : CoilSet, n_poin
     FourierCoil [n_coils, n_points_desired, 3]
         Resampled positions along the coil
     '''
-    return CoilSet(_convert_fourier_coilset_to_equal_arclength_internal(fourier_coilset.coils, n_points_sample, n_points_desired, method), fourier_coilset.n_coils)
+    return CoilSet(_convert_fourier_coilset_to_equal_arclength_internal(fourier_coilset.coils, n_points_sample, n_points_desired, method))
 
 
 
@@ -375,7 +375,7 @@ def convert_to_fourier_coilset(coilset : CoilSet, n_modes : int = None):
         Fourier coil object
     '''
     fourier_cos, fourier_sin, centre = curve_to_fourier_coefficients(coilset.coils.positions, n_modes)
-    return CoilSet(FourierCoil(fourier_cos=fourier_cos, fourier_sin=fourier_sin, centre_i=centre), fourier_cos.shape[0])
+    return CoilSet(FourierCoil(fourier_cos=fourier_cos, fourier_sin=fourier_sin, centre_i=centre))
 
 
 
