@@ -64,6 +64,10 @@ def _1d_sampling_grid(fs_jax : jsb.flux_surfaces.FluxSurface, n_s : int = 6, n_t
         tt = - onp.array(tt)
     return onp.array(ss).ravel(), onp.zeros(ss.shape).ravel(), onp.array(tt).ravel(), onp.array(pp).ravel()
 
+def _get_single_flux_surface(vmec_file):
+    fs_jax    = jsb.flux_surfaces.FluxSurface.from_hdf5(vmec_file)
+    return fs_jax
+
 
 # ===================================================================================================================================================================================
 #                                                                          Base Flux Surface functions
@@ -322,3 +326,88 @@ def test_volumes(_get_flux_surfaces):
         
     fs_jax, fs_sbgeom = _get_flux_surfaces
     _check_volumes(fs_jax, fs_sbgeom)
+
+# ===================================================================================================================================================================================
+#                                                                          Conversion to Fourier
+# ===================================================================================================================================================================================
+def check_RZ_to_VMEC(Rgrid, Zgrid):
+    from jax_sbgeom.flux_surfaces.convert_to_VMEC import _convert_cos_sin_to_VMEC, _dft_forward, _cos_sin_from_dft_forward
+    # Reimplementation
+    R_dft = _dft_forward(Rgrid)
+    Z_dft = _dft_forward(Zgrid)
+
+    R_ckl, R_cmkl, R_skl, R_smkl = _cos_sin_from_dft_forward(R_dft)
+    Z_ckl, Z_cmkl, Z_skl, Z_smkl = _cos_sin_from_dft_forward(Z_dft)
+
+    # SBGeom implementation
+    R_dft_sbg, N, M = SBGeom.VMEC._Scaled_DFT(Rgrid)
+    Z_dft_sbg, N, M = SBGeom.VMEC._Scaled_DFT(Zgrid)
+
+    R_ckl_sbg, R_cmkl_sbg, R_skl_sbg, R_smkl_sbg = SBGeom.VMEC._Calculate_CosSin_From_DFT(R_dft_sbg , N, M)
+    Z_ckl_sbg, Z_cmkl_sbg, Z_skl_sbg, Z_smkl_sbg = SBGeom.VMEC._Calculate_CosSin_From_DFT(Z_dft_sbg , N, M)
+
+    onp.testing.assert_allclose(R_dft, R_dft_sbg, rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(Z_dft, Z_dft_sbg, rtol=1e-12, atol=1e-12)
+
+    onp.testing.assert_allclose(R_ckl, R_ckl_sbg, rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(R_cmkl, R_cmkl_sbg, rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(R_skl, R_skl_sbg, rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(R_smkl, R_smkl_sbg, rtol=1e-12, atol=1e-12)
+
+    onp.testing.assert_allclose(Z_ckl, Z_ckl_sbg, rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(Z_cmkl, Z_cmkl_sbg, rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(Z_skl, Z_skl_sbg, rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(Z_smkl, Z_smkl_sbg, rtol=1e-12, atol=1e-12)
+
+    Rmnc = _convert_cos_sin_to_vmec(R_ckl, R_cmkl, R_skl, R_smkl,True)
+    Zmns = _convert_cos_sin_to_vmec(Z_ckl, Z_cmkl, Z_skl, Z_smkl,False)
+    
+
+    Rmnc_sbg = SBGeom.VMEC._Convert_CosSin_to_VMEC_R(R_ckl_sbg, R_cmkl_sbg, R_skl_sbg, R_smkl_sbg)
+    Zmns_sbg = SBGeom.VMEC._Convert_CosSin_to_VMEC_Z(Z_ckl_sbg, Z_cmkl_sbg, Z_skl_sbg, Z_smkl_sbg)
+    
+
+    onp.testing.assert_allclose(Rmnc, Rmnc_sbg[0], rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(Zmns, Zmns_sbg[0], rtol=1e-12, atol=1e-12)
+
+def create_RZ_grid(fs_jax, s : float, n_theta : int, n_phi : int):
+    theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
+    phi   = jnp.linspace(0, 2 * jnp.pi / fs_jax.settings.nfp, n_phi, endpoint=True)
+    theta_grid, phi_grid = jnp.meshgrid(theta, phi, indexing='ij')
+    positions_jax = fs_jax.cylindrical_position(s, theta_grid, phi_grid)
+    
+    return positions_jax[...,0], positions_jax[...,1]
+
+def _variations():
+    n_theta_list = [51, 52, 51, 52]
+    n_phi_list   = [51, 51, 52, 52]
+    return n_theta_list, n_phi_list
+
+@pytest.mark.slow
+def test_RZ_to_VMEC():
+    fs_jax = _get_single_flux_surface(_get_files()[0])
+
+    for n_theta, n_phi in zip(*_variations()):
+        check_RZ_to_VMEC(*create_RZ_grid(fs_jax, 0.55, n_theta, n_phi))
+
+def test_RZ_to_VMEC_lcfs(_get_flux_surfaces):
+    fs_jax, fs_sbgeom = _get_flux_surfaces
+
+    mpol_max = int(fs_jax.settings.mpol) - 1
+    print(mpol_max)
+    ntor_max = int(fs_jax.settings.ntor)
+
+    n_theta = mpol_max * 2 + 1 # just above nyquist
+    n_phi   = ntor_max * 2 + 1 # just above nyquist
+
+    sampling_r, sampling_z = jsb.flux_surfaces.convert_to_VMEC._create_sampling_rz(fs_jax, 1.0, n_theta, n_phi)
+    print(sampling_r.shape, sampling_z.shape)
+
+    Rmnc, Zmns             = jsb.flux_surfaces.convert_to_VMEC._rz_to_vmec_representation(sampling_r, sampling_z)
+
+    onp.testing.assert_allclose(Rmnc, fs_jax.data.Rmnc[-1,:], rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(Zmns, fs_jax.data.Zmns[-1,:], rtol=1e-12, atol=1e-12)
+
+
+
+    

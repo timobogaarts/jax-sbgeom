@@ -420,8 +420,8 @@ def _volume_from_fourier(data : FluxSurfaceData, settings : FluxSurfaceSettings,
     # Nyquist -> 6 times the mode number
     nyquist_sampling = 6
 
-    n_theta = settings.mpol * nyquist_sampling
-    n_phi   = settings.ntor *  nyquist_sampling 
+    n_theta = settings.mpol * nyquist_sampling +1
+    n_phi   = settings.ntor *  nyquist_sampling  +1
     
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
     phi   = jnp.linspace(0, 2 * jnp.pi / settings.nfp, n_phi, endpoint=False)
@@ -467,7 +467,7 @@ def _volume_from_fourier_half_mod(data : FluxSurfaceData, settings : FluxSurface
     '''
 
     nyquist_sampling = 6
-    n_theta = settings.mpol * nyquist_sampling
+    n_theta = settings.mpol * nyquist_sampling + 1
 
     # We add one to always satisfy nyquist.
     n_phi   = int((settings.ntor *  nyquist_sampling + 1) / 2) 

@@ -56,11 +56,11 @@ print(jax_currents.shape)
 # %%
 lcfs = jsb.flux_surfaces.FluxSurface.from_hdf5(vmec_file)
 
-ntheta = 51
-nphi   = 61
+n_theta = 51
+n_phi   = 61
 
-theta = jnp.linspace(0, 2 * jnp.pi, ntheta, endpoint=False)
-phi   = jnp.linspace(0, 2 * jnp.pi, nphi, endpoint=False)
+theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
+phi   = jnp.linspace(0, 2 * jnp.pi, n_phi, endpoint=False)
 
 theta_grid, phi_grid = jnp.meshgrid(theta, phi, indexing="ij")  
 positions_lcfs = lcfs.cartesian_position(1.0, theta_grid, phi_grid)

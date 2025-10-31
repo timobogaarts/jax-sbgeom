@@ -2,22 +2,12 @@
 
 A JAX-based Python package for stellarator geometry
 
-
 # Installation
+The jax dependency
 
-The dependency on jax is purposefully left out. It can be installed with 
+PyVista is used in the examples with jupyter notebooks but is not a necessary dependency.
 
-```
-pip install jax
-```
-or with CUDA features 
-```
-pip install jax[cuda]
-```
-
-PyVista is used in the examples with jupyter notebooks.
-
-Use
+To use the examples:
 ```
 pip install 'jupyterlab' 'pyvista[all]'
 ```
