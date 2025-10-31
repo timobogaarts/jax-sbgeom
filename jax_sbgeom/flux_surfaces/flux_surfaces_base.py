@@ -69,6 +69,7 @@ def _cartesian_to_cylindrical(XYZ : jnp.ndarray):
     return jnp.stack([R, z, phi], axis=-1)
 
 
+@jax.jit
 def _check_whether_make_normals_point_outwards_required(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray):
     '''
     * Internal * 
@@ -149,7 +150,7 @@ def _reverse_theta_single(m_vec, n_vec, coeff_vec, cosine_sign : bool):
         
     matches = jnp.all(keys[:, None, :] == reversed_keys_mod[None, :, :], axis=-1)
 
-    assert jnp.all(jnp.any(matches, axis=0))
+#    assert jnp.all(jnp.any(matches, axis=0))
 
     idx_map = jnp.argmax(matches, axis=0)
     
@@ -160,7 +161,7 @@ def _reverse_theta_single(m_vec, n_vec, coeff_vec, cosine_sign : bool):
     
     return new_coeff_vec
 
-reverse_theta_total  = jax.vmap(_reverse_theta_single, in_axes=(None, None, 0, None), out_axes=0)
+reverse_theta_total  = jax.jit(jax.vmap(_reverse_theta_single, in_axes=(None, None, 0, None), out_axes=0))
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -274,6 +275,18 @@ class FluxSurface:
     @classmethod
     def from_flux_surface(cls, flux_surface_base : "FluxSurface"):
         return cls(data = flux_surface_base.data, settings = flux_surface_base.settings)
+    
+    @classmethod
+    def from_rmnc_zmns_mpol_ntor(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol : int, ntor : int, nfp : int, make_normals_point_outwards : bool = True):
+        nsurf = Rmnc.shape[0]
+        settings = FluxSurfaceSettings(
+            mpol=mpol,
+            ntor=ntor,
+            nfp=nfp,                
+            nsurf=nsurf
+        )
+        data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings, make_normals_point_outwards)
+        return cls(data=data, settings=settings)
     
 
     def cylindrical_position(self, s, theta, phi):

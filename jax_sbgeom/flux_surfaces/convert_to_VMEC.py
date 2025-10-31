@@ -3,6 +3,10 @@ import jax.numpy as jnp
 from functools import partial
 from .flux_surfaces_base import _create_mpol_vector, _create_ntor_vector, FluxSurface
 
+from .flux_surfaces_extended import FluxSurfaceNormalExtended, FluxSurfaceNormalExtendedNoPhi, FluxSurfaceNormalExtendedConstantPhi
+
+from warnings import warn
+
 @jax.jit
 def _dft_forward(points : jnp.ndarray):
     '''
@@ -67,7 +71,7 @@ def _cos_sin_from_dft_forward(dft_coefficients):
 
 @partial(jax.jit, static_argnums = 4)
 def _convert_cos_sin_to_vmec(xckl, xcmkl, xskl, xsmkl, cosine : bool):
-    mpol = xckl.shape[0] - 1 # mpol needs to be 1 higher than maximum because vmec
+    mpol = xckl.shape[0] - 1
     ntor = xckl.shape[1] - 1
 
     mpol_vector = _create_mpol_vector(mpol,ntor)
@@ -111,37 +115,6 @@ def _rz_to_vmec_representation(R_grid, Z_grid):
     Z_vmec = _convert_cos_sin_to_vmec(Z_ckl, Z_cmkl, Z_skl, Z_smkl, cosine=False)
     return R_vmec, Z_vmec
 
-@partial(jax.jit, static_argnums = (2,3))
-def _create_sampling_rz(flux_surface, s, n_theta : int, n_phi : int):
-    '''
-    Create a grid of R,Z points on a flux surface at normalized radius s, compatible with Fourier transformation
-
-    Parameters
-    ----------
-    flux_surface : FluxSurface
-        The flux surface object
-    s : float
-        The normalized radius of the flux surface 
-    n_theta : int
-        The number of poloidal angles to sample
-    n_phi : int
-        The number of toroidal angles to sample
-    Returns
-    -------
-    R : jnp.ndarray
-        The R coordinates of the grid points
-    Z : jnp.ndarray
-        The Z coordinates of the grid points
-    
-    '''
-    theta = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False)
-    phi   = jnp.linspace(0, 2*jnp.pi / flux_surface.settings.nfp, n_phi, endpoint=False)
-    theta_mg, phi_mg = jnp.meshgrid(theta, phi, indexing='ij')
-
-    positions_jax = flux_surface.cylindrical_position(s, theta_mg, phi_mg)
-
-    return positions_jax[...,0], positions_jax[...,1]
-
 def _index_mn(m,n, ntor):    
     return n + (m>0) * (2 * ntor + 1) * m  
 
@@ -163,4 +136,38 @@ def _convert_to_different_ntor_mpol(array : jnp.ndarray, mpol_new : int, ntor_ne
         
     return array_new
 
+def mpol_ntor_from_ntheta_nphi(n_theta : int, n_phi : int):    
+    mpol = n_theta // 2
+    ntor = n_phi   // 2
+    return mpol, ntor
+
+
+def create_fourier_representation(flux_surface : FluxSurface, s : jnp.ndarray, theta_grid : jnp.ndarray):
+    # Static Checks
+    assert theta_grid.ndim == 2, "theta_grid must be a 2D grid (n_theta, n_phi) but got shape {}".format(theta_grid.shape)    
+    
+    if jnp.array(s).ndim != 0:       
+        assert s.shape == theta_grid.shape
+    
+    if isinstance(flux_surface, FluxSurfaceNormalExtended):
+        warn("FluxSurfaceNormalExtended does not have phi_in = phi_out. This introduces errors when Fourier transforming", UserWarning)
+    
+    if type(flux_surface) == FluxSurface:
+        warn("FluxSurface base class does not extend beyond the LCFS. Any conversion with s>0.0 will reproduce the LCFS", UserWarning)
+    
+
+    n_theta = theta_grid.shape[0]
+    n_phi   = theta_grid.shape[1]
+
+    phi_grid                 = jnp.linspace(0, 2*jnp.pi / flux_surface.settings.nfp, n_phi, endpoint=False)    
+    _, phi_mg                = jnp.meshgrid(jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False), phi_grid, indexing='ij')
+
+    RZphi_sampled            = flux_surface.cylindrical_position(s, theta_grid, phi_mg)
+    R_grid                   = RZphi_sampled[..., 0]
+    Z_grid                   = RZphi_sampled[..., 1]
+
+    Rmnc, Zmns               = _rz_to_vmec_representation(R_grid, Z_grid)
+
+    mpol, ntor               = mpol_ntor_from_ntheta_nphi(n_theta, n_phi)
+    return Rmnc, Zmns, mpol, ntor
 

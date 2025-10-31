@@ -393,14 +393,17 @@ def test_RZ_to_VMEC():
 def test_RZ_to_VMEC_lcfs(_get_flux_surfaces):
     fs_jax, fs_sbgeom = _get_flux_surfaces
 
-    n_theta = fs_jax.settings.mpol * 2 + 1 # just above nyquist
-    n_phi   = fs_jax.settings.ntor * 2 + 1 # just above nyquist
+    n_theta = fs_jax.settings.mpol * 2 + 1 # nyquist
+    n_phi   = fs_jax.settings.ntor * 2 + 1 # nyquist
 
-    sampling_r, sampling_z = jsb.flux_surfaces.convert_to_VMEC._create_sampling_rz(fs_jax, 1.0, n_theta, n_phi)
-    print(sampling_r.shape, sampling_z.shape)
+     
+    theta = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False)
+    phi   = jnp.linspace(0, 2*jnp.pi / fs_jax.settings.nfp, n_phi, endpoint=False)
+    theta_mg, phi_mg = jnp.meshgrid(theta, phi, indexing='ij')
 
-    Rmnc, Zmns             = jsb.flux_surfaces.convert_to_VMEC._rz_to_vmec_representation(sampling_r, sampling_z)
+    positions_jax = fs_jax.cylindrical_position(1.0, theta_mg, phi_mg)
 
+    Rmnc, Zmns             = jsb.flux_surfaces.convert_to_VMEC._rz_to_vmec_representation(positions_jax[..., 0], positions_jax[..., 1])
     onp.testing.assert_allclose(Rmnc, fs_jax.data.Rmnc[-1,:], rtol=1e-12, atol=1e-12)
     onp.testing.assert_allclose(Zmns, fs_jax.data.Zmns[-1,:], rtol=1e-12, atol=1e-12)
 
