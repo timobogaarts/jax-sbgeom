@@ -70,8 +70,8 @@ def _convert_cos_sin_to_vmec(xckl, xcmkl, xskl, xsmkl, cosine : bool):
     mpol = xckl.shape[0] - 1 # mpol needs to be 1 higher than maximum because vmec
     ntor = xckl.shape[1] - 1
 
-    ntor_vector = _create_ntor_vector(ntor, mpol, 1)  # symm not necessary here
-    mpol_vector = _create_mpol_vector(ntor, mpol)
+    mpol_vector = _create_mpol_vector(mpol,ntor)
+    ntor_vector = _create_ntor_vector(mpol,ntor, 1)  # symm not necessary here    
 
     ntor_vector_abs = jnp.abs(ntor_vector)
 
@@ -150,8 +150,8 @@ def _size_mn(mpol, ntor):
 
 @partial(jax.jit, static_argnums = (1,2,3,4))
 def _convert_to_different_ntor_mpol(array : jnp.ndarray, mpol_new : int, ntor_new : int, mpol_old : int, ntor_old : int):
-    ntor_vector_new = _create_ntor_vector(ntor_new, mpol_new, 1)  # symm not necessary here
-    mpol_vector_new = _create_mpol_vector(ntor_new, mpol_new)
+    mpol_vector_new = _create_mpol_vector(mpol_new, ntor_new)
+    ntor_vector_new = _create_ntor_vector(mpol_new, ntor_new, 1)  # symm not necessary here    
    
     data_available  = jnp.logical_and(mpol_vector_new <= mpol_old, jnp.abs(ntor_vector_new) <= ntor_old)
     

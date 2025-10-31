@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from jax_sbgeom.jax_utils.utils import stack_jacfwd, interpolate_array
 from functools import partial
 
-def _create_mpol_vector(ntor : int, mpol : int):    
+def _create_mpol_vector(mpol : int, ntor : int):    
     '''
     Create the poloidal mode number vector for VMEC representation.
 
@@ -17,17 +17,17 @@ def _create_mpol_vector(ntor : int, mpol : int):
 
     Parameters
     ----------
-    ntor : int
-        Maximum toroidal mode number.
     mpol : int
         Maximum poloidal mode number.
+    ntor : int
+        Maximum toroidal mode number.    
     Returns
     -------
     jnp.ndarray
         The poloidal mode number vector.
     '''
     return jnp.array([0 for i in range(ntor + 1)] + sum([[i for j in range(2 * ntor + 1)]for i in range(1, mpol +1 )], []), dtype=int)
-def _create_ntor_vector(ntor : int, mpol : int, symm : int):
+def _create_ntor_vector(mpol : int, ntor : int, symm : int):
     '''
     Create the toroidal mode number vector for VMEC representation.
 
@@ -36,10 +36,10 @@ def _create_ntor_vector(ntor : int, mpol : int, symm : int):
 
     Parameters
     ----------
-    ntor : int
-        Maximum toroidal mode number.
     mpol : int
         Maximum poloidal mode number.
+    ntor : int
+        Maximum toroidal mode number.    
     symm : int
         The symmetry factor (number of field periods)
     Returns
@@ -180,8 +180,8 @@ class FluxSurfaceData:
 
     @classmethod
     def from_rmnc_zmns_settings(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, settings : FluxSurfaceSettings, make_normals_point_outwards : bool = True):
-        mpol_vector = _create_mpol_vector(settings.ntor, settings.mpol)
-        ntor_vector = _create_ntor_vector(settings.ntor, settings.mpol, settings.nfp)
+        mpol_vector = _create_mpol_vector(settings.mpol, settings.ntor)
+        ntor_vector = _create_ntor_vector(settings.mpol, settings.ntor, settings.nfp)
 
         if make_normals_point_outwards:
             flip_theta = _check_whether_make_normals_point_outwards_required(Rmnc, Zmns, mpol_vector)
@@ -231,8 +231,8 @@ def _data_settings_from_hdf5(filename : str, make_normals_point_outwards : bool 
         ntor = int(f['ntor'][()])                        
         nfp  = int(f['nfp'][()])
 
-        assert( jnp.all( _create_mpol_vector(ntor, mpol) == jnp.array(f['xm'])))      # sanity check
-        assert( jnp.all( _create_ntor_vector(ntor, mpol, nfp) == jnp.array(f['xn']))) # sanity check
+        assert( jnp.all( _create_mpol_vector(mpol, ntor) == jnp.array(f['xm'])))      # sanity check
+        assert( jnp.all( _create_ntor_vector(mpol, ntor, nfp) == jnp.array(f['xn']))) # sanity check
         
         nsurf = int(Zmns.shape[0])
         settings = FluxSurfaceSettings(
