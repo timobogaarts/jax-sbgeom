@@ -7,10 +7,49 @@ from jax_sbgeom.jax_utils.utils import stack_jacfwd, interpolate_array
 from functools import partial
 
 def _create_mpol_vector(ntor : int, mpol : int):    
-    return jnp.array([0 for i in range(ntor + 1)] + sum([[i for j in range(2 * ntor + 1)]for i in range(1, mpol )], []), dtype=int)
+    '''
+    Create the poloidal mode number vector for VMEC representation.
 
+    Uses [0] * ntor + 1, [1] * (2 * ntor + 1), [2] * (2 * ntor + 1), ..., [mpol] * (2 * ntor + 1) 
+    First is because for zero poloidal mode, there is no difference between positive and negative toroidal modes
+    They can be combined into a single coefficient. Since the zero mode also needs representation, there are ntor + 1 entries for m = 0.
+    For m >0, there are 2 * ntor + 1 entries, since both positive and negative toroidal modes need representation and the zero mode.
+
+    Parameters
+    ----------
+    ntor : int
+        Maximum toroidal mode number.
+    mpol : int
+        Maximum poloidal mode number.
+    Returns
+    -------
+    jnp.ndarray
+        The poloidal mode number vector.
+    '''
+    return jnp.array([0 for i in range(ntor + 1)] + sum([[i for j in range(2 * ntor + 1)]for i in range(1, mpol +1 )], []), dtype=int)
 def _create_ntor_vector(ntor : int, mpol : int, symm : int):
-    return jnp.array(list(range(0, (ntor + 1) * symm , symm)) + sum([list(range(-ntor * symm, (ntor + 1) * symm, symm)) for i in range(mpol - 1)], []), dtype=int)
+    '''
+    Create the toroidal mode number vector for VMEC representation.
+
+    Uses [0, 1, 2, ..., ntor], [-ntor, ..., -1, 0, 1, ..., ntor], ..., [-ntor, ..., -1, 0, 1, ..., ntor] for m = 0, 1, ..., mpol
+    Multiplied by symmetry factor symm.
+
+    Parameters
+    ----------
+    ntor : int
+        Maximum toroidal mode number.
+    mpol : int
+        Maximum poloidal mode number.
+    symm : int
+        The symmetry factor (number of field periods)
+    Returns
+    -------
+    jnp.ndarray
+        The toroidal mode number vector.
+
+    '''
+
+    return jnp.array(list(range(0, (ntor + 1) * symm , symm)) + sum([list(range(-ntor * symm, (ntor + 1) * symm, symm)) for i in range(mpol)], []), dtype=int)
 
 
 def _cylindrical_to_cartesian(RZphi : jnp.ndarray):
@@ -126,10 +165,10 @@ reverse_theta_total  = jax.vmap(_reverse_theta_single, in_axes=(None, None, 0, N
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class FluxSurfaceSettings:
-    mpol : int
-    ntor : int
-    nfp  : int
-    nsurf : int    
+    mpol : int     # maximum poloidal mode number [inclusive]
+    ntor : int     # maximum toroidal mode number [inclusive]
+    nfp  : int     # number of field periods
+    nsurf : int    # number of flux surfaces
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -188,7 +227,7 @@ def _data_settings_from_hdf5(filename : str, make_normals_point_outwards : bool 
         Rmnc = jnp.array(f['rmnc'])            
         Zmns = jnp.array(f['zmns'])            
 
-        mpol = int(f['mpol'][()])
+        mpol = int(f['mpol'][()]) - 1 # vmec uses mpol 1 larger than maximum poloidal mode number
         ntor = int(f['ntor'][()])                        
         nfp  = int(f['nfp'][()])
 

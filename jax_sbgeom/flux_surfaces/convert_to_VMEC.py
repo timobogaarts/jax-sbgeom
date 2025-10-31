@@ -1,7 +1,7 @@
 import jax 
 import jax.numpy as jnp
 from functools import partial
-from .flux_surfaces_base import _create_mpol_vector, _create_ntor_vector
+from .flux_surfaces_base import _create_mpol_vector, _create_ntor_vector, FluxSurface
 
 @jax.jit
 def _dft_forward(points : jnp.ndarray):
@@ -67,7 +67,7 @@ def _cos_sin_from_dft_forward(dft_coefficients):
 
 @partial(jax.jit, static_argnums = 4)
 def _convert_cos_sin_to_vmec(xckl, xcmkl, xskl, xsmkl, cosine : bool):
-    mpol = xckl.shape[0]  # mpol needs to be 1 higher than maximum because vmec
+    mpol = xckl.shape[0] - 1 # mpol needs to be 1 higher than maximum because vmec
     ntor = xckl.shape[1] - 1
 
     ntor_vector = _create_ntor_vector(ntor, mpol, 1)  # symm not necessary here
@@ -141,3 +141,26 @@ def _create_sampling_rz(flux_surface, s, n_theta : int, n_phi : int):
     positions_jax = flux_surface.cylindrical_position(s, theta_mg, phi_mg)
 
     return positions_jax[...,0], positions_jax[...,1]
+
+def _index_mn(m,n, ntor):    
+    return n + (m>0) * (2 * ntor + 1) * m  
+
+def _size_mn(mpol, ntor):
+    return (2 * ntor + 1) * mpol + ntor +1
+
+@partial(jax.jit, static_argnums = (1,2,3,4))
+def _convert_to_different_ntor_mpol(array : jnp.ndarray, mpol_new : int, ntor_new : int, mpol_old : int, ntor_old : int):
+    ntor_vector_new = _create_ntor_vector(ntor_new, mpol_new, 1)  # symm not necessary here
+    mpol_vector_new = _create_mpol_vector(ntor_new, mpol_new)
+   
+    data_available  = jnp.logical_and(mpol_vector_new <= mpol_old, jnp.abs(ntor_vector_new) <= ntor_old)
+    
+    # we ensure we don't go out of bounds here by setting indices to 0 when data is not available
+    # jnp.where *will* access both branches before selecting. We need to set the out-of-bounds indices to a safe value and then 
+    # select 0.0 in the following where:
+    index_mn_new    = jnp.where(data_available, _index_mn(mpol_vector_new, ntor_vector_new, ntor_old), 0)
+    array_new       = jnp.where(data_available, array[..., index_mn_new], 0.0)    
+        
+    return array_new
+
+
