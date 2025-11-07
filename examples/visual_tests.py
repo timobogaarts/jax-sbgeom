@@ -117,5 +117,118 @@ def optimize_cws_and_plot(coil_i : int = 2, convert_to_fourier : bool = True):
 
     create_coil_splines_figure(x_base, xarr, coilset_ordered)
 
+def _get_discrete_coils(coil_file):
+    with h5py.File(coil_file, 'r') as f:
+        coil_data = jnp.array(f['Dataset1'])
+
+    return jsb.coils.CoilSet.from_list([jsb.coils.DiscreteCoil.from_positions(coil_data[i]) for i in range(coil_data.shape[0])])
+
+
+def aabb_to_lines(aabbs):
+    """
+    Convert (N,2,3) AABBs to a single PolyData with all box edges.
+    Vectorized and fast.
+    """
+    aabbs = onp.asarray(aabbs)
+    N = aabbs.shape[0]
+    mn = aabbs[:,0,:]  # shape (N,3)
+    mx = aabbs[:,1,:]  # shape (N,3)
+
+    # 8 corners per box in normalized [0,1] space
+    corners = onp.array([
+        [0,0,0],[1,0,0],[1,1,0],[0,1,0],
+        [0,0,1],[1,0,1],[1,1,1],[0,1,1]
+    ])  # (8,3)
+
+    # Compute all points: (N,8,3)
+    points = mn[:,None,:] + (mx - mn)[:,None,:] * corners[None,:,:]
+    points = points.reshape(-1,3)  # (8*N,3)
+
+    # Edges of one box
+    edges = onp.array([
+        [0,1],[1,2],[2,3],[3,0],
+        [4,5],[5,6],[6,7],[7,4],
+        [0,4],[1,5],[2,6],[3,7]
+    ])  # (12,2)
+
+    # Repeat edges for all boxes with proper offset
+    offsets = onp.arange(N) * 8  # (N,)
+    all_edges = edges[None,:,:] + offsets[:,None,None]  # (N,12,2)
+    all_edges = all_edges.reshape(-1,2)  # (12*N,2)
+
+    # Build connectivity array for PolyData
+    connectivity = onp.hstack([onp.full((all_edges.shape[0],1),2), all_edges])  # (12*N,3)
+    connectivity = connectivity.flatten()
+
+    return pv.PolyData(points, lines=connectivity)
+
+
+def plot_bvh(coil_i = 2, idx_child = 0):
+    import jax_sbgeom.jax_utils.raytracing as RT
+    coil_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
+
+    coil_file = coil_files[coil_i]
+
+    coilset_jax       = _get_discrete_coils(coil_file)
+
+    sarr, coilset = jsb.coils.coil_winding_surface.optimize_coil_surface(coilset_jax, n_samples_per_coil=  300)
+
+    positions_coilset = coilset.position_different_s(jsb.coils.coil_winding_surface._create_total_s(sarr[0], coilset.n_coils))
+    vertices = jsb.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_coilset.shape[1], positions_coilset.shape[0], True, True)
+    positions_standard_ordering = jnp.moveaxis(positions_coilset, 0, 1) # ntheta, nphi [number of coils], 3
+    mesh_pv_cws = _mesh_to_pyvista_mesh(positions_standard_ordering.reshape(-1,3), vertices)
+    mesh_cws_def = (positions_standard_ordering.reshape(-1,3), vertices)
+
+
+    bvh = RT.build_lbvh(mesh_cws_def[0], mesh_cws_def[1])
+
+
+    probe_idx = 2500
+    probe = bvh.inverse_order[probe_idx]
+
+
+    aabbs = []
+    def get_parent(idx):
+        
+        parent = jnp.where((bvh.left_idx == idx) | (bvh.right_idx == idx))
+    
+        if parent[0].shape[0] == 0:
+            return 
+        if (idx < bvh.order.shape[0]) & (parent[0].shape[0] == 2):
+            return parent[0][1]
+        elif (parent[0].shape[0] == 1) & (idx >= bvh.order.shape[0]):
+            return parent[0][0]
+        else:
+            print(parent[0].shape, idx, bvh.order.shape)
+            print("WJTKDSJF", idx< bvh.order.shape[0], parent[0].shape[0]==2)
+            raise ValueError("Something went wrong when getting parent in BVH:", parent, idx)
+        
+    pi = probe
+    n_levels_approx = jnp.log2(bvh.order.shape[0]).astype(int) + 5
+    for levels in range(n_levels_approx):
+        aabbs.append(get_parent(pi))
+        if aabbs[-1] is None:
+            break
+        pi = aabbs[-1]
+
+    aabb_polydata = []
+    for aabb_i in aabbs:
+        if aabb_i is not None:
+            aabb_polydata.append(aabb_to_lines(bvh.aabb[aabb_i:aabb_i+1]))
+
+    colors = ["red", "green", "blue", "yellow", "cyan"]
+    plotter = pv.Plotter()
+    plotter.add_mesh(_mesh_to_pyvista_mesh(*mesh_cws_def))
+    plotter.add_mesh(pv.PolyData(onp.array(mesh_cws_def[0][mesh_cws_def[1][probe_idx]])), 'red')
+    for i, aabb_i in enumerate(aabb_polydata):
+        plotter.add_mesh(aabb_polydata[i], color = colors[i%len(colors)])
+
+    plotter.show()
+    
+    
+
+
+
+
 if __name__ == "__main__":
     run_closed_surfaces_test(vmec_i=1)

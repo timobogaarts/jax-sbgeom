@@ -59,3 +59,4 @@ def test_pchip_interpolation(x, y):
 
     # Compare the results
     onp.testing.assert_allclose(jax_interpolation, scipy_interpolation)
+    
