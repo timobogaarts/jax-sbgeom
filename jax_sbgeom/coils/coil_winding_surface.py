@@ -12,12 +12,12 @@ def _s_softplus(d_i : jnp.ndarray, minimum_distance : float = 1e-5):
     Compute normalized arc length s in [0, 1] using softplus regularization to ensure positive segment lengths.
     Parameters
     ----------
-    d_i : jnp.ndarray [n_coils, n_points-1]
+    d_i : jnp.ndarray [n_coils, n_samples]
         Unregularized segment lengths between consecutive points along each coil.
     Returns
     -------
-    s_c : jnp.ndarray [n_coils, n_points]
-        Normalized cumulative arc length along each coil, ranging from 0 to 1.
+    s_c : jnp.ndarray [n_coils, n_samples]
+        Normalized cumulative arc length along each coil [0,1] endpoints included.
     '''
     soft_plus = jax.nn.softplus(d_i)
     d = soft_plus + minimum_distance
@@ -48,9 +48,9 @@ def _coil_surface_distance_loss(s_arr : jnp.ndarray, coilset : CoilSet):
             Distance loss, lower is better  
 
         '''
-        positions   = coilset.position_different_s(s_arr)  # [n_coils, n_s, 3]
+        positions   = coilset.position_different_s(s_arr[..., :-1])  # [n_coils, n_s -1 , 3] # :- 1 because the last point is the first one by definition.
         obj         = jnp.sum((positions - jnp.roll(positions, 1, axis=0))**2)         
-        centre_diff = jnp.sum((coilset.centre() - jnp.roll(coilset.centre(), shift=1, axis=0  ))**2) * s_arr.shape[1] # multiplied by the number of sample points along the coil
+        centre_diff = jnp.sum((coilset.centre() - jnp.roll(coilset.centre(), shift=1, axis=0  ))**2) * (s_arr.shape[1] -1) # multiplied by the number of sample points along the coil
         return obj / centre_diff
 
 @jax.jit
@@ -62,7 +62,7 @@ def _uniformity_loss(x : jnp.ndarray):
 
         Parameters:
         ----------
-        x: jnp.ndarray [n_coils, n_points]
+        x: jnp.ndarray [n_coils, n_samples]
             Points along each coil
         Returns:
         -------
@@ -85,7 +85,7 @@ def _repulsion_loss(x : jnp.ndarray, p : int = 2, eps : float = 1e-6):
 
         Parameters:
         ----------
-        x: jnp.ndarray [n_coils, n_points]
+        x: jnp.ndarray [n_coils, n_samples]
             Points along each coil
         p: int
             Power of the repulsion
@@ -118,13 +118,13 @@ def _create_total_s(d_i : jnp.ndarray, n_coils : int):
 
     Parameters:
     ----------
-    d_i : jnp.ndarray [n_coils * (n_points - 1)]
+    d_i : jnp.ndarray [n_coils * n_samples]
         Unregularized segment lengths between consecutive points along each coil.
     n_coils : int
         Number of coils.
     Returns:
     -------
-    s_c : jnp.ndarray [n_coils, n_points]
+    s_c : jnp.ndarray [n_coils, n_samples]
         Normalized cumulative arc length along each coil, ranging from 0 to 1.        
     '''
     return _s_softplus(d_i.reshape((n_coils, -1)))
@@ -137,7 +137,7 @@ def coil_surface_loss(d_i : jnp.ndarray, coilset : CoilSet, n_coils : int, unifo
 
     Parameters:
     ----------
-    d_i : jnp.ndarray [n_coils * (n_points - 1)]
+    d_i : jnp.ndarray [n_coils * n_samples]
         Unregularized segment lengths between consecutive points along each coil.
     coilset : CoilSet
         CoilSet containing the coils.
@@ -170,7 +170,31 @@ def _create_coil_surface_loss_function(coilset : CoilSet, uniformity_penalty : f
     
     return loss_fn
 
-def optimize_coil_surface(coilset : CoilSet, uniformity_penalty : float = 1.0, repulsive_penalty : float = 0.1, n_samples_per_coil : int = 100, optimization_settings = jax_sbgeom.jax_utils.optimize.OptimizationSettings(100,1e-4)):        
+def optimize_coil_surface(coilset : CoilSet, uniformity_penalty : float = 1.0, repulsive_penalty : float = 0.1, n_samples_per_coil : int = 100, optimization_settings = jax_sbgeom.jax_utils.optimize.OptimizationSettings(100,1e-4)): 
+    '''
+    Optimize the sampling points of a CoilSet for minimum distance between adjacent coils with penalties for non-uniformity and closeness of points.
+    This ensures that the optimizer does not find pathological solutions where points cluster together. The CoilSet is first ordered in phi and ensured to have positive orientation.
+
+    Parameters:
+    ----------
+    coilset : CoilSet
+        CoilSet containing the coils to optimize.
+    uniformity_penalty : float
+        Weight of the uniformity loss.
+    repulsive_penalty : float
+        Weight of the repulsion loss.
+    n_samples_per_coil : int
+        Number of sample points per coil.
+    optimization_settings : OptimizationSettings
+        Settings for the optimization process.
+    Returns:
+    -------
+    optimized_params : jnp.ndarray
+        Optimized parameters for the coil surface.
+    coilset_ordered_and_positive : CoilSet
+        CoilSet with ordered and positively oriented coils.
+
+    '''
     coilset_ordered_and_positive = ensure_coilset_rotation(order_coilset_phi(coilset), True)
     loss_fn                      = _create_coil_surface_loss_function(coilset_ordered_and_positive, uniformity_penalty, repulsive_penalty)    
     
@@ -178,3 +202,88 @@ def optimize_coil_surface(coilset : CoilSet, uniformity_penalty : float = 1.0, r
     x0                           = jnp.ones(coilset.n_coils * n_samples_per_coil)        
     
     return jax_sbgeom.jax_utils.optimize.run_optimization_lbfgs(x0, loss_fn, optimization_settings), coilset_ordered_and_positive
+
+
+def _create_cws_mesh_from_optimization(coilset : CoilSet, d_opt : jnp.ndarray, n_points_per_coil : int, convert_fourier : bool, n_points_phi : int = None):
+    '''
+    Create a coil winding surface mesh from optimized parameters.
+    
+    Parameters:
+    ----------
+    coilset : CoilSet
+        CoilSet containing the coils. Assumed to ordered and positively oriented.
+    d_opt : jnp.ndarray
+        Optimized parameters for the coil surface.
+    n_points_per_coil : int
+        Number of points per coil in the output mesh.
+    convert_fourier : bool
+        Whether to convert the output mesh to Fourier representation.
+    n_points_phi : int
+        Number of points in the toroidal direction if converting to Fourier.
+    Returns:
+    -------
+    positions : jnp.ndarray [n_points, 3]
+        Positions of the coil winding surface mesh points.
+    connectivity : jnp.ndarray [n_faces, 3]
+        Connectivity of the coil winding surface mesh.            
+    '''
+    total_s_array               = _create_total_s(d_opt, coilset.n_coils) # n_coils, n_samples_per_coil_opt
+    # Sampled from 0 to 1 endpoint not included. Move axis: n_coils, n_samples_per_coil - 1, 3 -> n_samples_per_coil - 1, n_coils, 3
+    # Ensures we fourier transform a toroidal curve instead of the coils themselves (i.e. the line connecting all the coils is the second-to-last dimension).
+    s_sample                    = jnp.linspace(0.0, 1.0, n_points_per_coil, endpoint=False)    
+    s_array_interpolated        = jax.vmap(jax_sbgeom.jax_utils.interpolate_array, in_axes=(0,None))(total_s_array, s_sample)
+    positions_cws               = jnp.moveaxis(coilset.position_different_s(s_array_interpolated), 0, 1) # ntheta [n_samples_per_coil], nphi [number_of_coils], 3
+    
+    if convert_fourier:            
+        if n_points_phi is None:
+            n_points_phi = coilset.n_coils
+        fourier_coilset = jax_sbgeom.coils.CoilSet(jax_sbgeom.coils.FourierCoil(*jax_sbgeom.coils.fourier_coil.curve_to_fourier_coefficients(positions_cws))) # coilset is just 1D fourier curves.
+        s_sample                    = jnp.linspace(0.0, 1.0, n_points_phi, endpoint=False)
+        positions_cws_fourier       = fourier_coilset.position(s_sample)  # n_theta [n_samples_per_coil], n_phi [number_of_coils], 3
+        connectivity                = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_cws_fourier.shape[0], positions_cws_fourier.shape[1], True, True)        
+        return positions_cws_fourier.reshape(-1,3), connectivity
+    else:                
+        connectivity                = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_cws.shape[0], positions_cws.shape[1], True, True)
+        return positions_cws.reshape(-1, 3), connectivity
+
+
+def create_optimized_coil_winding_surface(coilset : CoilSet, n_points_per_coil : int, convert_fourier : bool, n_points_phi : int = None,
+                                          uniformity_penalty : float = 1.0, repulsive_penalty : float = 0.1, n_samples_per_coil_opt : int = 100, optimization_settings = jax_sbgeom.jax_utils.optimize.OptimizationSettings(100,1e-4)):
+    '''
+    Create an optimized coil winding surface mesh from a CoilSet. The CoilSet is first ordered in phi and ensured to have positive orientation.
+    
+    Parameters:
+    ----------
+    coilset : CoilSet
+        CoilSet containing the coils to optimize.
+    n_points_per_coil : int
+        Number of points per coil in the output mesh.
+    convert_fourier : bool
+        Whether to convert the output mesh to Fourier representation.
+    n_points_phi : int
+        Number of points in the toroidal direction if converting to Fourier.
+    uniformity_penalty : float
+        Weight of the uniformity loss.
+    repulsive_penalty : float
+        Weight of the repulsion loss.
+    n_samples_per_coil_opt : int
+        Number of sample points per coil for the optimization.
+    optimization_settings : OptimizationSettings
+        Settings for the optimization process.
+    Returns:
+    -------
+    positions : jnp.ndarray [n_points, 3]
+        Positions of the coil winding surface mesh points.
+    connectivity : jnp.ndarray [n_faces, 3]
+        Connectivity of the coil winding surface mesh.  
+
+    '''
+
+    optimized_params, ordered_coilset = optimize_coil_surface(
+        coilset,
+        uniformity_penalty,
+        repulsive_penalty,
+        n_samples_per_coil_opt,
+        optimization_settings
+    )
+    return _create_cws_mesh_from_optimization(ordered_coilset, optimized_params[0], n_points_per_coil, convert_fourier, n_points_phi)

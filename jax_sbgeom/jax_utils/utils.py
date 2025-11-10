@@ -314,3 +314,12 @@ def _mesh_to_pyvista_mesh(pts, conn):
         return mesh
     else:
         raise ValueError("Connectivity must be triangles or tetrahedra")
+    
+def _vertices_to_pyvista_polyline(pts : jnp.ndarray):
+    import pyvista as pv
+    points_onp = onp.array(pts)
+   # Create a PolyData line from the points
+    lines   = onp.hstack([[points_onp.shape[0], *range(points_onp.shape[0])]]).astype(onp.int64)
+    polyline = pv.PolyData(points_onp, lines=lines)
+
+    return polyline
