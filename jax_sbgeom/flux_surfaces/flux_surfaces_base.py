@@ -564,3 +564,113 @@ def _volume_from_fourier_half_mod(data : FluxSurfaceData, settings : FluxSurface
     
 
 
+#==========================================================================================================================================================================================
+#                                                                           d(theta,phi) extensions
+#==========================================================================================================================================================================================
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------------
+#                                                                          interpolating d(theta,phi) on full module grid
+#---------------------------------------------------------------------------------------------------------------------------------------------------------- 
+from jax_sbgeom.jax_utils.utils import bilinear_interp
+def _normalize_theta_phi_full_mod(theta : jnp.ndarray, phi : jnp.ndarray, nfp : int):
+    '''
+    Normalize theta and phi to [0, 1] range for full module interpolation
+
+    Computes effectively:
+        theta_norm = (theta % (2pi)) / (2pi)    
+        phi_norm   = (phi % (2pi/nfp)) / (2pi/nfp)
+
+    Parameters:
+    -----------
+    theta : jnp.ndarray
+        Poloidal angles
+    phi : jnp.ndarray
+        Toroidal angles
+    nfp : int
+        Number of field periods in the flux surface
+    
+    Returns:
+    --------
+    theta_norm : jnp.ndarray
+        Normalized poloidal angles
+    phi_norm : jnp.ndarray  
+        Normalized toroidal angles
+    '''    
+    return(theta % (2 * jnp.pi)) / (2 * jnp.pi), (phi % (2 * jnp.pi / nfp)) / (2 * jnp.pi / nfp)
+
+def _interpolate_s_grid_full_mod(theta : jnp.ndarray, phi : jnp.ndarray, nfp : int, s_grid : jnp.ndarray):
+    '''
+    Interpolates s values on a full module grid using bilinear interpolation.
+    
+    The grid of s values is assumed to be a uniformly sampled full module grid: s[0,0] is (0,0). s[-1,-1] is (2pi, 2pi/nfp)
+
+    First normalised theta, phi to the [0, 1] range (within a full module)
+
+    Parameters:
+    -----------
+    theta : jnp.ndarray
+        Poloidal angles to interpolate at
+    phi : jnp.ndarray
+        Toroidal angles to interpolate at
+    nfp : int
+        Number of field periods in the flux surface
+    s_grid : jnp.ndarray [n_theta_sampled, n_phi_sampled]
+        Grid of s values to interpolate from. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)
+    Returns:
+    --------
+    s_interp : jnp.ndarray
+        Interpolated s values at (theta, phi)
+    '''    
+    return bilinear_interp(*_normalize_theta_phi_full_mod(theta, phi, nfp), s_grid)
+
+
+@partial(jax.jit)
+def _cartesian_position_interpolating_s_grid_full_mod(flux_surface : FluxSurface, s_grid : jnp.ndarray, theta : jnp.ndarray, phi : jnp.ndarray):    
+    '''
+    Compute the Cartesian position of a flux surface at interpolated s values. 
+    
+    The grid of s values is assumed to be a uniformly sampled full module grid: s[0,0] is (0,0). s[-1,-1] is (2pi, 2pi/nfp)
+    
+    If the tangent is desired, use dx_dtheta_d_varying instead of the base _dx_dtheta in flux_surface_base.py. This takes into account the ds/dtheta term.
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        Flux surface to compute position on.
+    s_grid : jnp.ndarray [n_theta_sampled, n_phi_sampled]
+        Grid of s values to interpolate from. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)
+    theta : jnp.ndarray
+        Poloidal angles to compute position at
+    phi : jnp.ndarray
+        Toroidal angles to compute position at
+    Returns:
+    --------
+    positions : jnp.ndarray [..., 3]
+        Cartesian positions at (theta, phi) with interpolated s values.        
+    '''
+    return flux_surface.cartesian_position(_interpolate_s_grid_full_mod(theta,phi, flux_surface.settings.nfp, s_grid), theta, phi)
+
+_dx_dtheta_interpolating_s_grid_full_mod = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_interpolating_s_grid_full_mod, argnums=2), excluded=(0,1), signature = "(),()->(3)"))
+
+@partial(jax.jit)
+def _arc_length_theta_interpolating_s_grid_full_mod(flux_surface : FluxSurface, s_grid : jnp.ndarray, theta : jnp.ndarray, phi : jnp.ndarray):
+    '''
+    Compute the arc length derivative with respect to theta of a flux surface at interpolated s values. 
+    
+    The grid of s values is assumed to be a uniformly sampled full module grid: s[0,0] is (0,0). s[-1,-1] is (2pi, 2pi/nfp)
+    
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        Flux surface to compute position on.
+    s_grid : jnp.ndarray [n_theta_sampled, n_phi_sampled]
+        Grid of s values to interpolate from. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)   
+    theta : jnp.ndarray
+        Poloidal angles to compute arc length derivative at
+    phi : jnp.ndarray
+        Toroidal angles to compute arc length derivative at 
+    Returns:
+    --------
+    arc_length_derivative : jnp.ndarray
+        Arc length derivative with respect to theta at (theta, phi) with interpolated s values.        
+    '''    
+    return jnp.linalg.norm(_dx_dtheta_interpolating_s_grid_full_mod(flux_surface, s_grid, theta, phi), axis=-1)

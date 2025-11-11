@@ -64,6 +64,37 @@ class FluxSurfaceNormalExtendedConstantPhi(FluxSurface):
     def principal_curvatures(self, s, theta, phi):        
         return _normal_extended_constant_phi_principal_curvatures(self.data, self.settings, s, theta, phi)
 
+@jax.tree_util.register_dataclass
+@dataclass(frozen =  True)
+class FluxSurfaceFourierExtended(FluxSurface):
+    '''
+    A flux surface that is extended using another flux surface defined in Fourier space.
+    This does not necessarily have to have the same mpol & ntor as the inner flux surface.
+    
+    The inner flux surface is used for s <= 1.0, and the extension flux surface is used for s > 1.0.
+
+    s = 1.0 corresponds to the LCFS of the inner surface
+    s = 2.0 corresponds to the first surface of the extension surface
+    etc.. 
+    s = n_extension + 1.0 corresponds to the last surface of the extension surface
+    '''
+    extension_flux_surface : FluxSurface = None
+
+    @classmethod
+    def from_flux_surface_and_extension(cls, flux_surface : FluxSurface, extension_flux_surface : FluxSurface):
+        return cls(data = flux_surface.data, settings = flux_surface.settings, extension_flux_surface = extension_flux_surface)
+    
+    def cartesian_position(self, s, theta, phi):
+        return _fourier_extended_cartesian_position(self.data, self.settings, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
+    
+    # def cylindrical_position(self, s, theta, phi):
+    #     return _fourier_extended_cylindrical_position(self.data, self.settings, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
+    
+    # def normal(self, s, theta, phi):
+    #     return _fourier_extended_normal(self.data, self.settings, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
+    
+    # def principal_curvatures(self, s, theta, phi):
+    #     return _fourier_extended_principal_curvatures(self.data, self.settings, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
 
 # ===================================================================================================================================================================================
 #                                                                           Normal Extended
@@ -157,7 +188,7 @@ def _distance_between_phi_phi_desired(data, settings, s, theta, phi, x):
     positions =  _normal_extended_cartesian_position(data, settings, s, theta, x)
     return _distance_between_angles(jnp.arctan2(positions[...,1], positions[...,0]), phi)
 
-@partial(jax.jit, static_argnums=(5)) # since we re-use this function multiple times, we jit it here
+@partial(jax.jit, static_argnums=(5)) 
 def _normal_extended_constant_phi_find_phi(data, settings, s, theta, phi, n_iter : int = 5):
     assert n_iter >= 1, "n_iter must be at least 1"
 
@@ -198,7 +229,31 @@ def _normal_extended_constant_phi_principal_curvatures(data : FluxSurfaceData, s
     return _normal_extended_principal_curvatures(data, settings, s, theta, phi_c)
 
 
+# ===================================================================================================================================================================================
+#                                                                          Fourier Extended
+# ===================================================================================================================================================================================
 
+@partial(jax.jit)
+def _fourier_extended_cartesian_position(data : FluxSurfaceData, settings  : FluxSurface, extension_data : FluxSurfaceData, extension_settings : FluxSurfaceSettings, s, theta, phi):
+    # This is not necessarily completely efficient: but we cannot avoid evaluating both positions in batched operations. 
+    n_surf_extension    = jnp.maximum(extension_data.Rmnc.shape[0], 2) # if there's only one extension surface this ensures we get a valid result (s=0.5 interpolation on the extension is just the surface itself anyway)
+    
+    inner_positions     = _cartesian_position_interpolated(data, settings, jnp.minimum(s, 1.0), theta, phi) 
+    d_value             = jnp.maximum(s - 1.0, 0.0)
+    d_value_extension   = jnp.maximum(d_value - 1.0, 0.0)
+    normalized_d_value  = d_value_extension / (n_surf_extension - 1.0)
+
+    extension_positions    = _cartesian_position_interpolated(extension_data, extension_settings, normalized_d_value , theta, phi)
+    extension_positions_d0 = _cartesian_position_interpolated(extension_data, extension_settings, jnp.zeros_like(s) , theta, phi)    
+    only_extension         = jnp.array(s >=2.0)
+
+    return jnp.where(only_extension[..., None], extension_positions,
+                     inner_positions + (extension_positions_d0- inner_positions) * d_value[..., None])
+
+    
+
+
+    
 
 
 

@@ -1,12 +1,12 @@
 import jax 
 import jax.numpy as jnp
 from functools import partial
-from .flux_surfaces_base import _create_mpol_vector, _create_ntor_vector, FluxSurface
+from .flux_surfaces_base import _create_mpol_vector, _create_ntor_vector, FluxSurface, FluxSurfaceData, FluxSurfaceSettings, _interpolate_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod
 
 from .flux_surfaces_extended import FluxSurfaceNormalExtended, FluxSurfaceNormalExtendedNoPhi, FluxSurfaceNormalExtendedConstantPhi
-
+from jax_sbgeom.jax_utils.utils import bilinear_interp, _resample_uniform_periodic_pchip
 from warnings import warn
-
+from typing import Type
 @jax.jit
 def _dft_forward(points : jnp.ndarray):
     '''
@@ -171,3 +171,62 @@ def create_fourier_representation(flux_surface : FluxSurface, s : jnp.ndarray, t
     mpol, ntor               = mpol_ntor_from_ntheta_nphi(n_theta, n_phi)
     return Rmnc, Zmns, mpol, ntor
 
+
+
+def create_fourier_surface_extension_interp(flux_surfaces : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int):
+    '''
+    Create a Fourier representation of a no-phi extended flux surface with an interpolated extension distance. 
+
+    Parameters:
+    -----------
+    flux_surfaces : FluxSurface
+        Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
+    d : jnp.ndarray [n_theta_sampled, n_phi_sampled]
+        Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)
+    n_theta : int
+        Number of poloidal points in the output Fourier representation.
+    n_phi : int
+        Number of toroidal points in the output Fourier representation.
+    Returns:
+    --------
+    fs_jax : FluxSurface
+        Fourier representation of the extended flux surface.
+    '''
+    theta, phi       = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False), jnp.linspace(0, 2*jnp.pi/flux_surfaces.settings.nfp, n_phi, endpoint=False)
+    theta_mg, phi_mg = jnp.meshgrid(theta, phi, indexing='ij')
+
+    s_interp               = _interpolate_s_grid_full_mod(theta_mg, phi_mg, flux_surfaces.settings.nfp, d + 1.0)
+    Rmnc, Zmns, mpol, ntor = create_fourier_representation(flux_surfaces, s_interp, theta_mg)
+    return Rmnc, Zmns, mpol, ntor, flux_surfaces.settings.nfp
+
+@partial(jax.jit, static_argnums=(2,3,4))
+def create_fourier_surface_extension_interp_equal_arclength(flux_surfaces : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_sample_arclength : int):
+    theta_al_sample              = jnp.linspace(0, 2*jnp.pi, n_theta_sample_arclength, endpoint=False)           #[ n_theta_sample_arclength ]
+    phi                          = jnp.linspace(0, 2*jnp.pi/flux_surfaces.settings.nfp, n_phi, endpoint=False)   #[ n_phi ]
+    theta_mg_al_sample, phi_mg_al_sample = jnp.meshgrid(theta_al_sample, phi, indexing='ij')                     #[n_theta_sample_arclength, n_phi]    
+    
+    arc_lengths = _arc_length_theta_interpolating_s_grid_full_mod(flux_surfaces, d, theta_mg_al_sample, phi_mg_al_sample) # [n_theta_sample_arclength, n_phi]    
+    # Resample to get new theta values that are uniformly spaced in arc length
+    # We batch over phi, so in_axes=1
+    # Require the output to be also batched over phi, so out_axes=1
+    new_theta_mg  = jax.vmap(_resample_uniform_periodic_pchip, in_axes=(1, None), out_axes=1)(arc_lengths, n_theta) * 2 * jnp.pi   # batch over the phi: we need to sample arc length in theta and output the batch also in first second axis instead of first    
+    _, phi_mg   = jnp.meshgrid(jnp.zeros(new_theta_mg.shape[0]), phi, indexing='ij')
+
+    s_interp = _interpolate_s_grid_full_mod(new_theta_mg, phi_mg, flux_surfaces.settings.nfp, d + 1.0) #[ n_theta, n_phi ]
+
+    Rmnc, Zmns, mpol, ntor = create_fourier_representation(flux_surfaces, s_interp, new_theta_mg)
+    return Rmnc, Zmns, mpol, ntor, flux_surfaces.settings.nfp
+
+
+def _create_fluxsurface_from_rmnc_zmns(rmnc : jnp.ndarray, zmns : jnp.ndarray, mpol : int, ntor : int, nfp : int, type : Type =  FluxSurface):
+    assert rmnc.shape == zmns.shape, "Rmnc and Zmns must have the same shape but got {} and {}".format(rmnc.shape, zmns.shape)
+    if rmnc.ndim == 1 :
+        Rmnc_ext = rmnc[None,:]
+        Zmns_ext = zmns[None,:]
+    else:
+        Rmnc_ext = rmnc
+        Zmns_ext = zmns
+    
+    settings = FluxSurfaceSettings(mpol, ntor, nfp, Rmnc_ext.shape[0])
+    fs_jax   = FluxSurface(FluxSurfaceData.from_rmnc_zmns_settings(Rmnc_ext, Zmns_ext, settings), settings)
+    return fs_jax

@@ -80,7 +80,7 @@ def test_conversion_to_fourier_representation(_get_normal_extended_no_phi_flux_s
 
     d_edge           = 1.12
 
-    Rmnc, Zmns, mpol,  ntor = jsb.flux_surfaces.convert_to_VMEC.create_fourier_representation(fs_jax, 1.0 + d_edge, theta_mg)
+    Rmnc, Zmns, mpol,  ntor = jsb.flux_surfaces.convert_to_vmec.create_fourier_representation(fs_jax, 1.0 + d_edge, theta_mg)
     sbgeom_version          = SBGeom.VMEC.Convert_to_Fourier_Extended(fs_sbgeom, [d_edge], n_theta, n_phi)
 
     Rmnc_s = sbgeom_version.Rmnc_Extension()
@@ -108,3 +108,89 @@ def test_conversion_to_fourier_representation(_get_normal_extended_no_phi_flux_s
 
     
 
+def test_fourier_extension(_get_normal_extended_no_phi_flux_surfaces):
+    # We test both the version for one extension surface and multiple extension surfaces
+
+    fs_jax, fs_sbgeom = _get_normal_extended_no_phi_flux_surfaces
+    
+    n_theta = fs_jax.settings.mpol * 2 + 3 # nyquist
+    n_phi   = fs_jax.settings.ntor * 2 + 51 # nyquist
+    symm    = fs_jax.settings.nfp
+
+    
+    theta   = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False)
+    phi     = jnp.linspace(0, 2*jnp.pi / symm, n_phi, endpoint=False)
+
+    theta_mg, phi_mg = jnp.meshgrid(theta, phi, indexing='ij')    
+
+    d_edge           = [1.12, 2.25, 3.5]
+
+    sbgeom_version          = SBGeom.VMEC.Convert_to_Fourier_Extended(fs_sbgeom, [1.0, 2.0, 3.0], n_theta, n_phi, d_edge)
+    
+    Rmnc_s = sbgeom_version.Rmnc_Extension()
+    Zmns_s = sbgeom_version.Zmns_Extension()
+
+    Rmnc_jax_list = []
+    Zmns_jax_list = []
+    mpol_list     = []
+    ntor_list     = []
+    for idx, i in enumerate(d_edge):
+        Rmnc, Zmns, mpol,  ntor = jsb.flux_surfaces.convert_to_vmec.create_fourier_representation(fs_jax, 1.0 + i, theta_mg)
+        Rmnc_jax_list.append(Rmnc)
+        Zmns_jax_list.append(Zmns)
+        mpol_list.append(mpol)
+        ntor_list.append(ntor)
+        mpol_new = jsb.flux_surfaces.flux_surfaces_base._create_mpol_vector(mpol, ntor)
+        ntor_new = jsb.flux_surfaces.flux_surfaces_base._create_ntor_vector(mpol, ntor, fs_jax.settings.nfp)
+        if fs_sbgeom.du_x_dv_sign() == 1.0:
+            Rmnc_flip = jsb.flux_surfaces.flux_surfaces_base._reverse_theta_single(mpol_new, ntor_new, Rmnc, True)
+            Zmns_flip = jsb.flux_surfaces.flux_surfaces_base._reverse_theta_single(mpol_new, ntor_new, Zmns, False)        
+            onp.testing.assert_allclose(onp.array(Rmnc_flip), onp.array(Rmnc_s[idx]), rtol=1e-5, atol=1e-8)        
+            onp.testing.assert_allclose(onp.array(Zmns_flip), onp.array(Zmns_s[idx]), rtol=1e-5, atol=1e-8)
+        else:  
+            onp.testing.assert_allclose(onp.array(Rmnc), onp.array(Rmnc_s[idx]), rtol=1e-5, atol=1e-8)        
+            onp.testing.assert_allclose(onp.array(Zmns), onp.array(Zmns_s[idx]), rtol=1e-5, atol=1e-8)   
+
+    flux_surface_fourier = jsb.flux_surfaces.convert_to_vmec._create_fluxsurface_from_rmnc_zmns(jnp.stack(Rmnc_jax_list, axis=0), jnp.stack(Zmns_jax_list, axis=0), mpol_list[0], ntor_list[0], fs_jax.settings.nfp)
+    flux_surface_fourier_extended = jsb.flux_surfaces.flux_surfaces_extended.FluxSurfaceFourierExtended.from_flux_surface_and_extension(fs_jax, flux_surface_fourier)
+    s_grid = jnp.linspace(1.0, 4.0, 50)    
+    d_grid_sbgeom = jnp.linspace(0.0, 3.0, 50)
+    positions_sbgeom = sbgeom_version.Return_Position(onp.ones_like(s_grid), onp.array(d_grid_sbgeom), 0.0, 0.2)    
+    positions_jax = flux_surface_fourier_extended.cartesian_position(s_grid, 0.0, 0.2)    
+    onp.testing.assert_allclose(onp.array(positions_jax), onp.array(positions_sbgeom), rtol=1e-5, atol=1e-8)
+
+    d_edge           = [1.12]
+
+    sbgeom_version          = SBGeom.VMEC.Convert_to_Fourier_Extended(fs_sbgeom, [1.0], n_theta, n_phi, d_edge)
+    
+    Rmnc_s = sbgeom_version.Rmnc_Extension()
+    Zmns_s = sbgeom_version.Zmns_Extension()
+
+    Rmnc_jax_list = []
+    Zmns_jax_list = []
+    mpol_list     = []
+    ntor_list     = []
+    for idx, i in enumerate(d_edge):
+        Rmnc, Zmns, mpol,  ntor = jsb.flux_surfaces.convert_to_vmec.create_fourier_representation(fs_jax, 1.0 + i, theta_mg)
+        Rmnc_jax_list.append(Rmnc)
+        Zmns_jax_list.append(Zmns)
+        mpol_list.append(mpol)
+        ntor_list.append(ntor)
+        mpol_new = jsb.flux_surfaces.flux_surfaces_base._create_mpol_vector(mpol, ntor)
+        ntor_new = jsb.flux_surfaces.flux_surfaces_base._create_ntor_vector(mpol, ntor, fs_jax.settings.nfp)
+        if fs_sbgeom.du_x_dv_sign() == 1.0:
+            Rmnc_flip = jsb.flux_surfaces.flux_surfaces_base._reverse_theta_single(mpol_new, ntor_new, Rmnc, True)
+            Zmns_flip = jsb.flux_surfaces.flux_surfaces_base._reverse_theta_single(mpol_new, ntor_new, Zmns, False)        
+            onp.testing.assert_allclose(onp.array(Rmnc_flip), onp.array(Rmnc_s[idx]), rtol=1e-5, atol=1e-8)        
+            onp.testing.assert_allclose(onp.array(Zmns_flip), onp.array(Zmns_s[idx]), rtol=1e-5, atol=1e-8)
+        else:  
+            onp.testing.assert_allclose(onp.array(Rmnc), onp.array(Rmnc_s[idx]), rtol=1e-5, atol=1e-8)        
+            onp.testing.assert_allclose(onp.array(Zmns), onp.array(Zmns_s[idx]), rtol=1e-5, atol=1e-8)   
+
+    flux_surface_fourier = jsb.flux_surfaces.convert_to_vmec._create_fluxsurface_from_rmnc_zmns(jnp.stack(Rmnc_jax_list, axis=0), jnp.stack(Zmns_jax_list, axis=0), mpol_list[0], ntor_list[0], fs_jax.settings.nfp)
+    flux_surface_fourier_extended = jsb.flux_surfaces.flux_surfaces_extended.FluxSurfaceFourierExtended.from_flux_surface_and_extension(fs_jax, flux_surface_fourier)
+    s_grid = jnp.linspace(1.0, 2.0, 50)    
+    d_grid_sbgeom = jnp.linspace(0.0, 1.0, 50)
+    positions_sbgeom = sbgeom_version.Return_Position(onp.ones_like(s_grid), onp.array(d_grid_sbgeom), 0.0, 0.2)    
+    positions_jax = flux_surface_fourier_extended.cartesian_position(s_grid, 0.0, 0.2)    
+    onp.testing.assert_allclose(onp.array(positions_jax), onp.array(positions_sbgeom), rtol=1e-5, atol=1e-8)

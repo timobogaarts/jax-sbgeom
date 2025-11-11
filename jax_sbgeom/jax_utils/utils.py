@@ -136,6 +136,40 @@ def interpolate_array_modulo_broadcasted(x_interp, s):
 def _reverse_except_begin(array : jnp.ndarray):
     return jnp.concatenate([array[0:1], array[1:][::-1,]], axis=0)
 
+@jax.jit
+def bilinear_interp(norm_array_0, norm_array_1, interpolate_array):
+    '''
+    Bilinear interpolation for uniform sampling in 2D
+    It is assumed that interpolate_array is defined on a uniform grid normalised to 1 in both dimensions.
+
+    Parameters
+    ----------
+    norm_array_0 : jnp.ndarray [shape]
+        Normalized parameter(s) between 0 and 1 in first dimension
+    norm_array_1 : jnp.ndarray [shape]
+        Normalized parameter(s) between 0 and 1 in second dimension
+    interpolate_array : jnp.ndarray [N0, N1]
+        Array to interpolate
+    Returns
+    -------
+    jnp.ndarray [shape]
+        Interpolated array
+    '''
+    i0, i1, ds = interpolate_fractions(norm_array_0, interpolate_array.shape[0]) 
+    j0, j1, dp = interpolate_fractions(norm_array_1, interpolate_array.shape[1])
+
+    f_00 = interpolate_array[i0,j0]
+    f_10 = interpolate_array[i1,j0]
+    f_01 = interpolate_array[i0,j1]
+    f_11 = interpolate_array[i1,j1]
+
+    interp_vals = (1.0 - ds) * (1.0 - dp) * f_00 + \
+                  ds         * (1.0 - dp) * f_10 + \
+                  (1.0 - ds) * dp         * f_01 + \
+                  ds         * dp         * f_11
+    return interp_vals
+
+
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # non-uniform interpolation
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------

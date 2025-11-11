@@ -5,6 +5,7 @@ from . import CoilSet
 from functools import partial
 from typing import Literal
 import jax.numpy as jnp
+from jax_sbgeom.jax_utils.optimize import OptimizationSettings
 
 @jax.jit
 def _s_softplus(d_i : jnp.ndarray, minimum_distance : float = 1e-5):    
@@ -304,7 +305,7 @@ def _create_cws_interpolated(coilset : CoilSet, n_points_per_coil : int, d_opt :
      
 
 def create_optimized_coil_winding_surface(coilset : CoilSet, n_points_per_coil : int, n_points_phi : int, surface_type : Literal['spline', 'fourier', 'direct'] = "spline",
-                                          uniformity_penalty : float = 1.0, repulsive_penalty : float = 0.1, n_samples_per_coil_opt : int = 100, optimization_settings = jax_sbgeom.jax_utils.optimize.OptimizationSettings(100,1e-4)):
+                                          uniformity_penalty : float = 1.0, repulsive_penalty : float = 0.1, n_samples_per_coil_opt : int = 100, optimization_settings = OptimizationSettings(100,1e-4)):
     '''
     Create an optimized coil winding surface mesh from a CoilSet. The CoilSet is first ordered in phi and ensured to have positive orientation.
     

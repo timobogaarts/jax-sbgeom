@@ -331,7 +331,7 @@ def test_volumes(_get_flux_surfaces):
 #                                                                          Conversion to Fourier
 # ===================================================================================================================================================================================
 def check_RZ_to_VMEC(Rgrid, Zgrid):
-    from jax_sbgeom.flux_surfaces.convert_to_VMEC import _convert_cos_sin_to_vmec, _dft_forward, _cos_sin_from_dft_forward
+    from jax_sbgeom.flux_surfaces.convert_to_vmec import _convert_cos_sin_to_vmec, _dft_forward, _cos_sin_from_dft_forward
     # Reimplementation
     R_dft = _dft_forward(Rgrid)
     Z_dft = _dft_forward(Zgrid)
@@ -403,7 +403,7 @@ def test_RZ_to_VMEC_lcfs(_get_flux_surfaces):
 
     positions_jax = fs_jax.cylindrical_position(1.0, theta_mg, phi_mg)
 
-    Rmnc, Zmns             = jsb.flux_surfaces.convert_to_VMEC._rz_to_vmec_representation(positions_jax[..., 0], positions_jax[..., 1])
+    Rmnc, Zmns             = jsb.flux_surfaces.convert_to_vmec._rz_to_vmec_representation(positions_jax[..., 0], positions_jax[..., 1])
     onp.testing.assert_allclose(Rmnc, fs_jax.data.Rmnc[-1,:], rtol=1e-12, atol=1e-12)
     onp.testing.assert_allclose(Zmns, fs_jax.data.Zmns[-1,:], rtol=1e-12, atol=1e-12)
 
@@ -416,7 +416,7 @@ def test_extension_VMEC(_get_flux_surfaces):
     ntor_new = fs_jax.settings.ntor + 13
     sampling_grid  = _sampling_grid(fs_jax)
 
-    Rmnc_Zmns_new = jsb.flux_surfaces.convert_to_VMEC._convert_to_different_ntor_mpol(jnp.stack([fs_jax.data.Rmnc, fs_jax.data.Zmns], axis=0), mpol_new, ntor_new, fs_jax.settings.mpol, fs_jax.settings.ntor)
+    Rmnc_Zmns_new = jsb.flux_surfaces.convert_to_vmec._convert_to_different_ntor_mpol(jnp.stack([fs_jax.data.Rmnc, fs_jax.data.Zmns], axis=0), mpol_new, ntor_new, fs_jax.settings.mpol, fs_jax.settings.ntor)
 
     new_settings = jsb.flux_surfaces.flux_surfaces_base.FluxSurfaceSettings(
         mpol = mpol_new,
