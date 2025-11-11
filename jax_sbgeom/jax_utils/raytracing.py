@@ -546,8 +546,7 @@ def ray_traversal_bvh_single(bvh : BVH, point : jnp.ndarray, direction : jnp.nda
             stack.at[ stack_idx].set(-1)
         )
 
-        return new_stack_idx, new_stack, hits_with_both, no_hits_with_both, loop_idx + 1
-        
+        return new_stack_idx, new_stack, hits_with_both, no_hits_with_both, loop_idx + 1        
     
     N_points = point.shape[0]
     stack = jnp.full(( stack_size,  ), -1) 
@@ -613,6 +612,13 @@ def ray_triangle_intersection_single(point, direction, triangle, eps=1e-8):
     return t
 
 ray_triangle_intersection_vectorized = jax.jit(jnp.vectorize(ray_triangle_intersection_single, signature='(3),(3),(3,3)->()'))
+
+@jax.jit
+def find_minimum_distance_to_mesh(points, directions, mesh):
+    bvh = build_lbvh(mesh[0], mesh[1]) # BVH
+    hits_possible = ray_traversal_bvh_vectorized(bvh, points, directions)    
+    mesh_total = jnp.moveaxis(mesh[0][mesh[1][bvh.order[hits_possible]]], -3, 0) # we move the possible hits to the front.
+    return jnp.nanmin(ray_triangle_intersection_vectorized(points, directions, mesh_total), axis=0)
 
 # theta_rt = jnp.linspace(0, 2*jnp.pi, n_theta_rt, endpoint=False)
 # phi_rt   = jnp.linspace(0, 2*jnp.pi / fs_jax.settings.nfp, n_phi_rt, endpoint=False)

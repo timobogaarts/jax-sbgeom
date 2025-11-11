@@ -7,6 +7,8 @@ def _get_files():
     vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
     return vmec_files
 
+
+
 @pytest.fixture(scope="session", params = _get_files())
 def _get_flux_surface_jax(request):    
     fs_jax    = jsb.flux_surfaces.FluxSurface.from_hdf5(request.param)

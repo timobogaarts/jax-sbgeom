@@ -1,9 +1,9 @@
 import jax 
 import jax_sbgeom
-from . import CoilSet
 from .coilset import ensure_coilset_rotation, order_coilset_phi
+from . import CoilSet
 from functools import partial
-
+from typing import Literal
 import jax.numpy as jnp
 
 @jax.jit
@@ -202,52 +202,108 @@ def optimize_coil_surface(coilset : CoilSet, uniformity_penalty : float = 1.0, r
     x0                           = jnp.ones(coilset.n_coils * n_samples_per_coil)        
     
     return jax_sbgeom.jax_utils.optimize.run_optimization_lbfgs(x0, loss_fn, optimization_settings), coilset_ordered_and_positive
-
-
-def _create_cws_mesh_from_optimization(coilset : CoilSet, d_opt : jnp.ndarray, n_points_per_coil : int, convert_fourier : bool, n_points_phi : int = None):
-    '''
-    Create a coil winding surface mesh from optimized parameters.
     
+def _cws_fourier(positions_cws : jnp.ndarray, n_points_phi : int):
+    '''
+    Interpolate coil winding surface positions to Fourier representation.
+
+    Parameters:
+    ----------
+    positions_cws : jnp.ndarray [n_points_per_coil, n_coils, 3]
+        Positions of the coil winding surface mesh points.
+    n_points_phi : int
+        Number of points in the toroidal direction.
+    
+    Returns:
+    -------
+    positions_cws_fourier : jnp.ndarray [n_points_per_coil, n_points_phi, 3]
+        Positions of the coil winding surface mesh points in Fourier representation.
+    '''
+    fourier_coilset = jax_sbgeom.coils.CoilSet(jax_sbgeom.coils.FourierCoil(*jax_sbgeom.coils.fourier_coil.curve_to_fourier_coefficients(positions_cws))) # coilset is just 1D fourier curves.
+    s_sample                    = jnp.linspace(0.0, 1.0, n_points_phi, endpoint=False)
+    positions_cws_fourier       = fourier_coilset.position(s_sample)  # n_theta [n_samples_per_coil], n_phi [number_of_coils], 3
+    connectivity                = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_cws_fourier.shape[0], positions_cws_fourier.shape[1], True, True)        
+    return positions_cws_fourier.reshape(-1,3), connectivity
+
+def _cws_direct(positions_cws : jnp.ndarray, n_points_phi : int):
+    '''
+    Create a direct coil winding surface mesh. Uses only the points on the coils themselves.
+
+    Parameters:
+    ----------
+    positions_cws : jnp.ndarray [n_points_per_coil, n_coils, 3]
+        Positions of the coil winding surface mesh points.
+    n_points_phi : int
+        Number of points in the toroidal direction. Not used here.
+    
+    Returns:
+    -------
+    positions_cws_fourier : jnp.ndarray [n_points_per_coil, n_coils, 3]
+        Positions of the coil winding surface mesh points in Fourier representation.
+    '''
+    connectivity                = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_cws.shape[0], positions_cws.shape[1], True, True)
+    return positions_cws.reshape(-1, 3), connectivity
+
+def _cws_spline(positions_cws : jnp.ndarray, n_points_phi : int):
+    '''
+    Create a interpolating spline coil winding surface mesh.
+
+    Parameters:
+    ----------
+    positions_cws : jnp.ndarray [n_points_per_coil, n_coils, 3]
+        Positions of the coil winding surface mesh points.
+    n_points_phi : int
+        Number of points in the toroidal direction.
+    
+    Returns:
+    -------
+    positions_cws_spline : jnp.ndarray [n_points_per_coil, n_points_phi, 3]
+        Positions of the coil winding surface mesh points in spline representation.
+    '''
+    y         = jnp.concatenate([positions_cws, positions_cws[:, :1, :]], axis=1) # add first coil at the end to ensure periodicity
+    batched_y = jnp.moveaxis(y, -1, 0)  # 3, n_points_per_coil, n_coils + 1 [we require the last axis to be the spline axis]
+    
+    # chord length parameterization
+    t         = jnp.linalg.norm(y[:,:]-jnp.roll(y,1,axis=1), axis=-1).cumsum(axis=1) # n_points_per_coil, n_coils + 1
+    t         = t / t[:,-1:]
+    bspline_batch        = jax_sbgeom.jax_utils.splines.periodic_interpolating_spline(t, batched_y, k=3)
+    positions_splines    = bspline_batch(jnp.linspace(0.0, 1.0, n_points_phi, endpoint=False))  #3, n_points_per_coil, n_points_phi    
+    positions_cws_spline = jnp.moveaxis(positions_splines, 0, -1)  # n_points_per_coil, n_points_phi, 3 [consistent ordering again]
+    
+    connectivity = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_cws_spline.shape[0], positions_cws_spline.shape[1], True, True)
+
+    return positions_cws_spline.reshape(-1,3), connectivity
+    
+def _create_cws_interpolated(coilset : CoilSet, n_points_per_coil : int, d_opt : jnp.ndarray):
+    '''
+    Sample points on the coilset using optimized d_i parameters.
+
     Parameters:
     ----------
     coilset : CoilSet
-        CoilSet containing the coils. Assumed to ordered and positively oriented.
-    d_opt : jnp.ndarray
-        Optimized parameters for the coil surface.
+        CoilSet containing the coils.
     n_points_per_coil : int
         Number of points per coil in the output mesh.
-    convert_fourier : bool
-        Whether to convert the output mesh to Fourier representation.
-    n_points_phi : int
-        Number of points in the toroidal direction if converting to Fourier.
+    d_opt : jnp.ndarray
+        Optimized parameters for the coil surface.
+    
     Returns:
     -------
-    positions : jnp.ndarray [n_points, 3]
+    positions_cws : jnp.ndarray [n_points_per_coil, n_coils, 3]
         Positions of the coil winding surface mesh points.
-    connectivity : jnp.ndarray [n_faces, 3]
-        Connectivity of the coil winding surface mesh.            
     '''
+
     total_s_array               = _create_total_s(d_opt, coilset.n_coils) # n_coils, n_samples_per_coil_opt
-    # Sampled from 0 to 1 endpoint not included. Move axis: n_coils, n_samples_per_coil - 1, 3 -> n_samples_per_coil - 1, n_coils, 3
-    # Ensures we fourier transform a toroidal curve instead of the coils themselves (i.e. the line connecting all the coils is the second-to-last dimension).
+
+    # Sampled from 0 to 1 endpoint not included. Move axis: n_coils, n_points_per_coil, 3 -> n_points_per_coil, n_coils, 3
+    # Ensures we have a consistent ordering: in flux surfaces, the first dimension is theta (similar to points along the coil), the second dimension is phi (similar to number of coils).
     s_sample                    = jnp.linspace(0.0, 1.0, n_points_per_coil, endpoint=False)    
     s_array_interpolated        = jax.vmap(jax_sbgeom.jax_utils.interpolate_array, in_axes=(0,None))(total_s_array, s_sample)
     positions_cws               = jnp.moveaxis(coilset.position_different_s(s_array_interpolated), 0, 1) # ntheta [n_samples_per_coil], nphi [number_of_coils], 3
-    
-    if convert_fourier:            
-        if n_points_phi is None:
-            n_points_phi = coilset.n_coils
-        fourier_coilset = jax_sbgeom.coils.CoilSet(jax_sbgeom.coils.FourierCoil(*jax_sbgeom.coils.fourier_coil.curve_to_fourier_coefficients(positions_cws))) # coilset is just 1D fourier curves.
-        s_sample                    = jnp.linspace(0.0, 1.0, n_points_phi, endpoint=False)
-        positions_cws_fourier       = fourier_coilset.position(s_sample)  # n_theta [n_samples_per_coil], n_phi [number_of_coils], 3
-        connectivity                = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_cws_fourier.shape[0], positions_cws_fourier.shape[1], True, True)        
-        return positions_cws_fourier.reshape(-1,3), connectivity
-    else:                
-        connectivity                = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_cws.shape[0], positions_cws.shape[1], True, True)
-        return positions_cws.reshape(-1, 3), connectivity
+    return positions_cws
+     
 
-
-def create_optimized_coil_winding_surface(coilset : CoilSet, n_points_per_coil : int, convert_fourier : bool, n_points_phi : int = None,
+def create_optimized_coil_winding_surface(coilset : CoilSet, n_points_per_coil : int, n_points_phi : int, surface_type : Literal['spline', 'fourier', 'direct'] = "spline",
                                           uniformity_penalty : float = 1.0, repulsive_penalty : float = 0.1, n_samples_per_coil_opt : int = 100, optimization_settings = jax_sbgeom.jax_utils.optimize.OptimizationSettings(100,1e-4)):
     '''
     Create an optimized coil winding surface mesh from a CoilSet. The CoilSet is first ordered in phi and ensured to have positive orientation.
@@ -286,4 +342,15 @@ def create_optimized_coil_winding_surface(coilset : CoilSet, n_points_per_coil :
         n_samples_per_coil_opt,
         optimization_settings
     )
-    return _create_cws_mesh_from_optimization(ordered_coilset, optimized_params[0], n_points_per_coil, convert_fourier, n_points_phi)
+
+    positions_cws_opt = _create_cws_interpolated(ordered_coilset, n_points_per_coil, optimized_params[0])
+    
+    if surface_type == 'fourier':
+        return _cws_fourier(positions_cws_opt, n_points_phi)
+    elif surface_type == 'direct':
+        return _cws_direct(positions_cws_opt, n_points_phi)
+    elif surface_type == 'spline':
+        return _cws_spline(positions_cws_opt, n_points_phi)
+    else:
+        raise ValueError(f"Unknown surface type: {surface_type}")
+

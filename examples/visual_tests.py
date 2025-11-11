@@ -226,6 +226,35 @@ def plot_bvh(coil_i = 2, idx_child = 0):
     plotter.show()
     
     
+def plot_different_cws_methods(vmec_i = 2):
+    coil_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
+    vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
+
+    fs_jax    = jsb.flux_surfaces.FluxSurfaceNormalExtendedNoPhi.from_hdf5(vmec_files[vmec_i])
+    
+
+    def _get_discrete_coils(coil_file):
+        with h5py.File(coil_file, 'r') as f:
+            coil_data = jnp.array(f['Dataset1'])
+        return jsb.coils.CoilSet.from_list([jsb.coils.DiscreteCoil.from_positions(coil_data[i]) for i in range(coil_data.shape[0])])
+    
+    coilset_jax       = _get_discrete_coils(coil_files[vmec_i])
+    optimized_params, ordered_coilset = jsb.coils.coil_winding_surface.optimize_coil_surface(coilset_jax, n_samples_per_coil=100)
+    positions_cws_opt = jsb.coils.coil_winding_surface._create_cws_interpolated(ordered_coilset, 200, optimized_params[0])
+    cws_direct  = jsb.coils.coil_winding_surface._cws_direct(positions_cws_opt, None)
+    cws_fourier = jsb.coils.coil_winding_surface._cws_fourier(positions_cws_opt, 200)
+    cws_spline  = jsb.coils.coil_winding_surface._cws_spline(positions_cws_opt, 200)
+    plotter = pv.Plotter(shape=(1,3))
+
+    plotter.subplot(0,0)
+    plotter.add_mesh(_mesh_to_pyvista_mesh(*cws_direct), color='red', opacity=1.0, show_edges=True)
+
+    plotter.subplot(0,1)
+    plotter.add_mesh(_mesh_to_pyvista_mesh(*cws_fourier), color='green', opacity=1.0, show_edges=True)
+    plotter.subplot(0,2)
+    plotter.add_mesh(_mesh_to_pyvista_mesh(*cws_spline), color='lightblue', opacity=1.0, show_edges=True)
+    plotter.link_views()
+    plotter.show()
 
 
 

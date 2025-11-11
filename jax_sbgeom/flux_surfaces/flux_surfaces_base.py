@@ -290,16 +290,16 @@ class FluxSurface:
     
 
     def cylindrical_position(self, s, theta, phi):
-        return _cylindrical_position_interpolated_jit(self.data, self.settings, s, theta, phi)
+        return _cylindrical_position_interpolated(self.data, self.settings, s, theta, phi)
     
     def cartesian_position(self, s, theta, phi):
-        return _cartesian_position_interpolated_jit(self.data, self.settings, s, theta, phi)
+        return _cartesian_position_interpolated(self.data, self.settings, s, theta, phi)
     
     def normal(self, s, theta, phi):
-        return _normal_interpolated_jit(self.data, self.settings, s, theta, phi)
+        return _normal_interpolated(self.data, self.settings, s, theta, phi)
     
     def principal_curvatures(self, s, theta, phi):
-        return _principal_curvatures_interpolated_jit(self.data, self.settings, s, theta, phi)
+        return _principal_curvatures_interpolated(self.data, self.settings, s, theta, phi)
     
     
 @jax.tree_util.register_dataclass
@@ -332,7 +332,7 @@ class ToroidalExtent:
 # ===================================================================================================================================================================================
 #                                                                           Positions
 # ===================================================================================================================================================================================
-
+@partial(jax.jit)
 def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     
     
@@ -364,14 +364,18 @@ def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxS
     return jnp.stack([R, Z, phi_bc],axis=-1)
     
 
-_cylindrical_position_interpolated_jit = jax.jit(_cylindrical_position_interpolated)
-
+@partial(jax.jit)
 def _cartesian_position_interpolated(data : FluxSurfaceData, settings : FluxSurfaceSettings, s, theta, phi):
     RZphi = _cylindrical_position_interpolated(data, settings, s, theta, phi)
     return _cylindrical_to_cartesian(RZphi)
 
-_cartesian_position_interpolated_jit = jax.jit(_cartesian_position_interpolated)
+_dx_dtheta = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_interpolated, argnums=3), excluded=(0,1), signature='(),(),()->(3)'))
 
+@partial(jax.jit)
+def _arc_length_theta(data : FluxSurfaceData, settings : FluxSurfaceSettings, s, theta, phi):
+    dx_dtheta = _dx_dtheta(data, settings, s, theta, phi)
+    dx_dtheta_norm = jnp.linalg.norm(dx_dtheta, axis=-1)
+    return dx_dtheta_norm
 # ===================================================================================================================================================================================
 #                                                                           Normals
 # ===================================================================================================================================================================================
@@ -382,6 +386,7 @@ _cartesian_position_interpolated_jit = jax.jit(_cartesian_position_interpolated)
 # furthermore, the jacobians are stacked to ensure jnp.vectorize can be used (it does not support multiple outputs like given by jacfwd)
 _cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cartesian_position_interpolated, argnums=(3,4)), excluded=(0,1), signature='(),(),()->(3,2)'))
 
+@partial(jax.jit)
 def _dx_dphi_cross_dx_dtheta(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
     dX_dtheta_and_dX_dphi = _cartesian_position_interpolated_grad(data, settings, s, theta, phi)
     # We use dr/dphi x dr/dtheta 
@@ -390,6 +395,7 @@ def _dx_dphi_cross_dx_dtheta(data : FluxSurfaceData,  settings : FluxSurfaceSett
     n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0])    
     return n
 
+@partial(jax.jit)
 def _normal_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):    
     # We use dr/dphi x dr/dtheta 
     # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
@@ -398,14 +404,12 @@ def _normal_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings
     n = n / jnp.linalg.norm(n, axis=-1, keepdims=True)
     return n
 
-_normal_interpolated_jit = jax.jit(_normal_interpolated)
-
 # ===================================================================================================================================================================================
 #                                                                           Principal curvatures
 # ===================================================================================================================================================================================
 _cartesian_position_interpolated_grad_grad = jax.jit(jnp.vectorize(stack_jacfwd(stack_jacfwd(_cartesian_position_interpolated, argnums=(3,4)), argnums = (3,4)), excluded=(0,1), signature='(),(),()->(3,2,2)'))
 
-
+@partial(jax.jit)
 def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
     dX_dtheta_and_dX_dphi                        = _cartesian_position_interpolated_grad(data, settings, s, theta, phi)
     d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2 = _cartesian_position_interpolated_grad_grad(data, settings, s, theta, phi)
@@ -433,7 +437,7 @@ def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxS
 
     return jnp.stack([k1, k2], axis=-1)
 
-_principal_curvatures_interpolated_jit = jax.jit(_principal_curvatures_interpolated)
+
 
 # ===================================================================================================================================================================================
 #                                                                           Volume and Surface
@@ -485,7 +489,7 @@ def _volume_from_fourier(data : FluxSurfaceData, settings : FluxSurfaceSettings,
     
     surface_normals      = _dx_dphi_cross_dx_dtheta(data, settings, s, tt, pp)
 
-    r                     = _cartesian_position_interpolated_jit(data, settings, s, tt, pp)    
+    r                     = _cartesian_position_interpolated(data, settings, s, tt, pp)    
     f_ij = jnp.einsum('...i,...i->...', r, surface_normals)
 
     volume = jnp.sum(f_ij) * dtheta * dphi / 3.0 * settings.nfp 
@@ -550,7 +554,7 @@ def _volume_from_fourier_half_mod(data : FluxSurfaceData, settings : FluxSurface
     
     surface_normals        = _dx_dphi_cross_dx_dtheta(data, settings, s, tt, pp)
 
-    r                      = _cartesian_position_interpolated_jit(data, settings, s, tt, pp)    
+    r                      = _cartesian_position_interpolated(data, settings, s, tt, pp)    
     f_ij                   = jnp.einsum('...i,...i->...', r, surface_normals)
 
     base_half_mod          = jnp.sum(f_ij) * dtheta * dphi / 3.0 

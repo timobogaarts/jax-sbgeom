@@ -5,7 +5,7 @@ import numpy as onp
 from dataclasses import dataclass
 from jax_sbgeom.jax_utils.utils import stack_jacfwd
 from functools import partial
-from .flux_surfaces_base import FluxSurface, ToroidalExtent, FluxSurfaceSettings, FluxSurfaceData, _data_settings_from_hdf5, _cartesian_to_cylindrical, _normal_interpolated_jit, _principal_curvatures_interpolated
+from .flux_surfaces_base import FluxSurface, ToroidalExtent, FluxSurfaceSettings, FluxSurfaceData, _data_settings_from_hdf5, _cartesian_to_cylindrical, _principal_curvatures_interpolated
 
 from .flux_surfaces_base import _cartesian_position_interpolated, _normal_interpolated
 
@@ -14,18 +14,18 @@ from .flux_surfaces_base import _cartesian_position_interpolated, _normal_interp
 class FluxSurfaceNormalExtended(FluxSurface):
 
     def cartesian_position(self, s, theta, phi):
-        return _normal_extended_cartesian_position_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_cartesian_position(self.data, self.settings, s, theta, phi)
     
     def cylindrical_position(self, s, theta, phi):
-        return _normal_extended_cylindrical_position_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_cylindrical_position(self.data, self.settings, s, theta, phi)
     
       # For a normal extended flux surface, the normal *remains the same* in the extended region
     def normal(self, s, theta, phi):        
-        return _normal_extended_normal_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_normal(self.data, self.settings, s, theta, phi)
     
     
     def principal_curvatures(self, s, theta, phi):        
-        return _normal_extended_principal_curvatures_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_principal_curvatures(self.data, self.settings, s, theta, phi)
 
 
 @jax.tree_util.register_dataclass
@@ -33,42 +33,43 @@ class FluxSurfaceNormalExtended(FluxSurface):
 class FluxSurfaceNormalExtendedNoPhi(FluxSurface):
 
     def cartesian_position(self, s, theta, phi):
-        return _normal_extended_no_phi_cartesian_position_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_no_phi_cartesian_position(self.data, self.settings, s, theta, phi)
     
     def cylindrical_position(self, s, theta, phi):
-        return _normal_extended_no_phi_cylindrical_position_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_no_phi_cylindrical_position(self.data, self.settings, s, theta, phi)
     
     # For a normal extended flux surface, the normal *remains the same* in the extended region
     def normal(self, s, theta, phi):
-        return _normal_extended_no_phi_normal_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_no_phi_normal(self.data, self.settings, s, theta, phi)
     
     # Principal curvatures could be implemented in the extension region using 
     def principal_curvatures(self, s, theta, phi):
-        return _normal_extended_no_phi_principal_curvatures_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_no_phi_principal_curvatures(self.data, self.settings, s, theta, phi)
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen =  True)
 class FluxSurfaceNormalExtendedConstantPhi(FluxSurface):
 
     def cartesian_position(self, s, theta, phi):
-        return _normal_extended_constant_phi_cartesian_position_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_constant_phi_cartesian_position(self.data, self.settings, s, theta, phi)
     
     def cylindrical_position(self, s, theta, phi):        
-        return _normal_extended_constant_phi_cylindrical_position_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_constant_phi_cylindrical_position(self.data, self.settings, s, theta, phi)
     
     # For a normal extended flux surface, the normal *remains the same* in the extended region
     def normal(self, s, theta, phi):        
-        return _normal_extended_constant_phi_normal_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_constant_phi_normal(self.data, self.settings, s, theta, phi)
     
     # Principal curvatures could be implemented in the extension region using 
     def principal_curvatures(self, s, theta, phi):        
-        return _normal_extended_constant_phi_principal_curvatures_jit(self.data, self.settings, s, theta, phi)
+        return _normal_extended_constant_phi_principal_curvatures(self.data, self.settings, s, theta, phi)
 
 
 # ===================================================================================================================================================================================
 #                                                                           Normal Extended
 # ===================================================================================================================================================================================
 
+@partial(jax.jit)
 def _normal_extended_cartesian_position(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):    
     positions = _cartesian_position_interpolated(data, settings, jnp.minimum(s, 1.0), theta, phi) 
     normals   = _normal_interpolated(data, settings, 1.0, theta, phi) # this will not give NaNs, as s=1.0 is always on the surface (non axis)    
@@ -77,12 +78,15 @@ def _normal_extended_cartesian_position(data : FluxSurfaceData, settings  : Flux
     # This is the case, as the positions are evaluated at s <= 1.0 and normals at s = 1.0    
     return positions + normals * distance_1d[..., None]
 
+@partial(jax.jit)
 def _normal_extended_cylindrical_position(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     return _cartesian_to_cylindrical(_normal_extended_cartesian_position(data, settings, s, theta, phi))
 
+@partial(jax.jit)
 def _normal_extended_normal(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     return _normal_interpolated(data, settings, jnp.minimum(s, 1.0), theta, phi)
 
+@partial(jax.jit)
 def _normal_extended_principal_curvatures(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     curvatures = _principal_curvatures_interpolated(data, settings, jnp.minimum(s, 1.0), theta, phi)
     d = jnp.maximum(s - 1.0, 0.0)        
@@ -91,12 +95,6 @@ def _normal_extended_principal_curvatures(data : FluxSurfaceData, settings  : Fl
     kappa_0 = curvatures[...,0] / jnp.abs(1.0 + curvatures[...,0] * d) * gamma_0
     kappa_1 = curvatures[...,1] / jnp.abs(1.0 + curvatures[...,1] * d) * gamma_1
     return jnp.stack([kappa_0, kappa_1], axis=-1)
-
-
-_normal_extended_cartesian_position_jit   = jax.jit(_normal_extended_cartesian_position)
-_normal_extended_cylindrical_position_jit = jax.jit(_normal_extended_cylindrical_position)
-_normal_extended_normal_jit               = jax.jit(_normal_extended_normal)
-_normal_extended_principal_curvatures_jit = jax.jit(_normal_extended_principal_curvatures)
 
 
 # ===================================================================================================================================================================================
@@ -111,6 +109,7 @@ def _hat_phi(positions):
     hat_phi = jnp.stack([-y / safe_r, x / safe_r, jnp.zeros_like(z)], axis=-1)
     return hat_phi
 
+@partial(jax.jit)
 def _normal_extended_no_phi_cartesian_position(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     positions                = _cartesian_position_interpolated(data, settings, jnp.minimum(s, 1.0), theta, phi)
     normals                  = _normal_interpolated(data, settings, 1.0, theta, phi)
@@ -125,21 +124,28 @@ def _normal_extended_no_phi_cartesian_position(data : FluxSurfaceData, settings 
 
     return positions + normal_no_phi_normalised * distance_1d[..., None]
 
+@partial(jax.jit)
 def _normal_extended_no_phi_cylindrical_position(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     return _cartesian_to_cylindrical(_normal_extended_no_phi_cartesian_position(data, settings, s, theta, phi))
 
+@partial(jax.jit)
 def _normal_extended_no_phi_normal(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     s_bc, theta_bc, phi_bc = jnp.broadcast_arrays(s, theta, phi)
     return jnp.full(s_bc.shape + (3,), jnp.nan)
 
+@partial(jax.jit)
 def _normal_extended_no_phi_principal_curvatures(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     s_bc, theta_bc, phi_bc = jnp.broadcast_arrays(s, theta, phi)
     return jnp.full(s_bc.shape + (2,), jnp.nan)
 
-_normal_extended_no_phi_cartesian_position_jit   = jax.jit(_normal_extended_no_phi_cartesian_position)
-_normal_extended_no_phi_cylindrical_position_jit = jax.jit(_normal_extended_no_phi_cylindrical_position)
-_normal_extended_no_phi_normal_jit               = jax.jit(_normal_extended_no_phi_normal)
-_normal_extended_no_phi_principal_curvatures_jit = jax.jit(_normal_extended_no_phi_principal_curvatures)
+_normal_extended_no_phi_dx_dtheta = jax.jit(jnp.vectorize(jax.jacfwd(_normal_extended_no_phi_cartesian_position, argnums=3), excluded=(0,1), signature='(),(),()->(3)'))
+
+@partial(jax.jit)
+def __normal_extended_no_phi_arc_length_theta(data : FluxSurfaceData, settings : FluxSurfaceSettings, s, theta, phi):
+    return jnp.linalg.norm(_normal_extended_no_phi_dx_dtheta(data, settings, s, theta, phi), axis=-1)
+
+
+
 
 # ===================================================================================================================================================================================
 #                                                                          Constant Phi
@@ -172,25 +178,26 @@ def _normal_extended_constant_phi_find_phi(data, settings, s, theta, phi, n_iter
     x_final = jax.lax.fori_loop(0, n_iter, secant_iteration, (x_minus_two, x_minus_one, f_minus_two))[1]
     return x_final
 
+@partial(jax.jit, static_argnums=(5))
 def _normal_extended_constant_phi_cartesian_position(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi, n_iter : int = 5):
     phi_c = _normal_extended_constant_phi_find_phi(data, settings, s, theta, phi, n_iter)    
     return _normal_extended_cartesian_position(data, settings, s, theta, phi_c)
 
+@partial(jax.jit, static_argnums=(5))
 def _normal_extended_constant_phi_cylindrical_position(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi, n_iter : int = 5):
     return _cartesian_to_cylindrical(_normal_extended_constant_phi_cartesian_position(data, settings, s, theta, phi, n_iter))
 
+@partial(jax.jit, static_argnums=(5))
 def _normal_extended_constant_phi_normal(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi, n_iter : int = 5):
     phi_c = _normal_extended_constant_phi_find_phi(data, settings, s, theta, phi, n_iter)    
     return _normal_extended_normal(data, settings, s, theta, phi_c)
 
+@partial(jax.jit, static_argnums=(5))
 def _normal_extended_constant_phi_principal_curvatures(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi, n_iter : int = 5):
     phi_c = _normal_extended_constant_phi_find_phi(data, settings, s, theta, phi, n_iter)    
     return _normal_extended_principal_curvatures(data, settings, s, theta, phi_c)
 
-_normal_extended_constant_phi_cartesian_position_jit   = jax.jit(_normal_extended_constant_phi_cartesian_position, static_argnums=(5))
-_normal_extended_constant_phi_cylindrical_position_jit = jax.jit(_normal_extended_constant_phi_cylindrical_position, static_argnums=(5))
-_normal_extended_constant_phi_normal_jit               = jax.jit(_normal_extended_constant_phi_normal, static_argnums=(5))
-_normal_extended_constant_phi_principal_curvatures_jit = jax.jit(_normal_extended_constant_phi_principal_curvatures, static_argnums=(5))
+
 
 
 
