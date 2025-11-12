@@ -357,3 +357,30 @@ def _vertices_to_pyvista_polyline(pts : jnp.ndarray):
     polyline = pv.PolyData(points_onp, lines=lines)
 
     return polyline
+
+# ===================================================================================================================================================================================
+#                                                                           Mesh utilities
+# ===================================================================================================================================================================================
+def surface_normals_from_mesh(mesh):
+    '''
+    Compute surface normals from triangular mesh
+
+    Parameters
+    ----------
+    mesh : tuple (pts, conn)
+        pts : jnp.ndarray [N_points, 3]
+            Points of the mesh
+        conn : jnp.ndarray [N_triangles, 3]
+            Connectivity of the mesh (triangles)
+    Returns
+    -------
+    jnp.ndarray [N_faces, 3]
+        Normals at each face of the mesh
+    '''
+    assert mesh[1].shape[-1] == 3, "Mesh must be triangular"    
+    positions_surface = mesh[0][mesh[1]]    
+    e_1 = positions_surface[..., 1, :] - positions_surface[...,0, :]
+    e_2 = positions_surface[..., 2, :] - positions_surface[...,0, :]
+    normal = jnp.cross(e_1, e_2, axis=-1)
+    normals = normal / jnp.linalg.norm(normal, axis=-1, keepdims=True)
+    return normals

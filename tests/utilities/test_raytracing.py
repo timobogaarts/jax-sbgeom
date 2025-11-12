@@ -42,3 +42,23 @@ def test_bvh_probing(_get_flux_surface_jax):
         sorted_hits = jnp.unique(hits_bvh)
         sorted_original_hits = jnp.unique(hits_original)
         onp.testing.assert_allclose(sorted_hits, sorted_original_hits)
+
+
+def test_bvh_closest_point(_get_flux_surface_jax):
+
+    fs_jax = _get_flux_surface_jax
+    N_test = 300
+    surface_mesh = jsb.flux_surfaces.flux_surface_meshing.mesh_surface(fs_jax, 1.0, jsb.flux_surfaces.ToroidalExtent.full(), 65,62)
+
+    points = fs_jax.cartesian_position(0.5, jnp.linspace(0,2 * jnp.pi, N_test, endpoint=False), 0.5)    
+
+
+    closest_points_jax, dmin, d_idx = jsb.jax_utils.raytracing.get_closest_points_on_mesh(points, surface_mesh)
+
+    import trimesh
+    tmesh = trimesh.Trimesh(*surface_mesh)
+    closest_point_trimesh, dmin_trimesh, d_idx_trimesh = trimesh.proximity.closest_point_naive(tmesh, onp.array(points))
+
+    onp.testing.assert_allclose(closest_point_trimesh, closest_points_jax, rtol=1e-5, atol=1e-5)
+    onp.testing.assert_allclose(dmin_trimesh, dmin, rtol=1e-5, atol=1e-5)
+    

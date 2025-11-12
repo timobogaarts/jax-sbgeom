@@ -620,11 +620,230 @@ def find_minimum_distance_to_mesh(points, directions, mesh):
     mesh_total = jnp.moveaxis(mesh[0][mesh[1][bvh.order[hits_possible]]], -3, 0) # we move the possible hits to the front.
     return jnp.nanmin(ray_triangle_intersection_vectorized(points, directions, mesh_total), axis=0)
 
-# theta_rt = jnp.linspace(0, 2*jnp.pi, n_theta_rt, endpoint=False)
-# phi_rt   = jnp.linspace(0, 2*jnp.pi / fs_jax.settings.nfp, n_phi_rt, endpoint=False)
-# theta_mg, phi_mg = jnp.meshgrid(theta_rt, phi_rt, indexing='ij')
 
-# positions_origins = fs_jax.cartesian_position(1.0, theta_mg, phi_mg)  # just to compile
-# directions        = fs_jax.cartesian_position(2.0, theta_mg, phi_mg) - positions_origins  # just to compile
-# total_triangles = positions_standard_ordering.reshape(-1,3)[vertices]
-# t,u,v , mask = ray_triangle_intersect_single(positions_origins[0,0], directions[0,0], total_triangles)  # just to compile
+# ==========================================================================================================
+#                                       Closest point on triangle
+#===========================================================================================================
+
+def closest_point_on_triangle(p, a, b, c):
+    '''
+    Compute the closest point on triangle abc to point p.
+    Not vectorzed itself. Reimplements:
+        https://github.com/RenderKit/embree/blob/master/tutorials/common/math/closest_point.h
+    but without if conditionals.
+
+    Parameters:
+    ------------
+    p : jnp.ndarray
+        (3,) array of point coordinates
+    a : jnp.ndarray
+        (3,) array of triangle vertex a coordinates
+    b : jnp.ndarray
+        (3,) array of triangle vertex b coordinates
+    c : jnp.ndarray
+        (3,) array of triangle vertex c coordinates
+    Returns:
+    ------------
+    closest_point : jnp.ndarray
+        (3,) array of closest point coordinates
+    '''
+    # Edge vectors
+    ab = b - a
+    ac = c - a
+    ap = p - a
+    
+    d1 = jnp.dot(ab, ap)
+    d2 = jnp.dot(ac, ap)
+
+    d1_d2_cond = (d1 <= 0.0) & (d2 <= 0.0)
+    d1_d2_cond_vec = a
+
+    bp = p - b
+    d3 = jnp.dot(ab, bp)
+    d4 = jnp.dot(ac, bp)
+
+    d3_d4_cond     = (d3 >= 0.0) & (d4 <= d3)
+    d3_d4_cond_vec = b
+
+    cp = p - c
+
+    d5 = jnp.dot(ab, cp)
+    d6 = jnp.dot(ac, cp)
+
+    d5_d6_cond     = (d6 >= 0.0) & (d5 <= d6)
+    d5_d6_cond_vec = c
+    
+    # Edge conditions
+    vc = d1 * d4 - d3 * d2    
+    ab_edge_cond = (vc <= 0.0) & (d1 >= 0.0) & (d3 <= 0.0)
+    ab_edge_vec  = a + d1 / (d1 - d3) * ab
+
+    vb = d5 * d2 - d1 * d6
+    ac_edge_cond = (vb <= 0.0) & (d2 >= 0.0) & (d6 <= 0.0)
+    ac_edge_vec  = a + d2 /(d2-d6) * ac
+
+    va = d3 * d6 - d5 * d4
+    bc_edge_cond = (va <=0.0) & ( (d4-d3) >=0.0) & ( (d5 -d6) >=0.0)
+    bc_edge_vec  = b + (d4 - d3) /((d4 - d3) + (d5 - d6)) * (c-b)
+
+    # Inside Triangle    
+    denom = 1.0 / (va + vb + vc)
+    v = vb * denom
+    w = vc * denom
+    triangle_vec = a + v * ab + w * ac
+
+    return jnp.where(
+        d1_d2_cond, d1_d2_cond_vec, 
+        jnp.where(
+            d3_d4_cond, d3_d4_cond_vec, 
+            jnp.where(
+                d5_d6_cond, d5_d6_cond_vec, 
+                jnp.where(
+                    ab_edge_cond, ab_edge_vec,
+                    jnp.where(
+                        ac_edge_cond, ac_edge_vec,
+                        jnp.where(
+                            bc_edge_cond, bc_edge_vec, 
+                            triangle_vec
+                        )
+                    )
+                )
+            )
+        )
+    )
+
+def _point_aabb_distance(p, aabb):
+    # Distance from point to box (0 if inside)
+    diff = jnp.maximum(0.0, jnp.maximum(aabb[..., 0, :] - p, p - aabb[..., 1, :]))
+    return jnp.sum(diff**2)
+
+@jax.jit
+def _bvh_closest_point(bvh : BVH, point: jnp.ndarray, mesh, stack_size : int = 64, max_hit_size : int = 64):
+    '''
+    Get closest point on triangle mesh for a single point using BVH traversal.
+
+    For multiple points, use bvh_closest_point_vectorized (handles arbitrary point shapes)
+
+    Parameters:
+    -----------
+        bvh: BVH
+            BVH structure
+        point: jnp.ndarray [3,]
+            Array of point coordinates
+        mesh: tuple of (positions, connectivity)
+            positions:    jnp.ndarray of shape (M, 3) representing the 3D coordinates of mesh vertices.
+            connectivity: jnp.ndarray of shape (K, 3) representing the triangle connectivity of the mesh.
+    Returns:
+    -----------
+        closest_point: jnp.ndarray [3,]
+            Array of closest point on the mesh for the input point.
+        distance: jnp.ndarray []
+            Distance from the input point to its closest point on the mesh.
+        triangle_index: jnp.ndarray []
+            Index of the triangle on which the closest point lies.
+    '''
+
+    N_leafs = (bvh.leafs.shape[0] + 1) // 2
+
+    surface_points = mesh[0][mesh[1]]  # (N_triangles, 3, 3)
+
+    
+    def condition(state):
+        stack_idx, _, _, _, loop_idx  = state
+        return  jnp.any(stack_idx >= 0 ) & (loop_idx < N_leafs)
+    
+    def loop(state):
+        stack_idx, stack, d_min, d_idx, loop_idx  = state        
+        current_idx  = stack[stack_idx]                                
+        left_idx     = bvh.left_idx[ current_idx]
+        right_idx    = bvh.right_idx[current_idx]
+
+        left_aabb_dist = _point_aabb_distance(point, bvh.aabb[left_idx] )
+        right_aabb_dist= _point_aabb_distance(point, bvh.aabb[right_idx])
+    
+        left_better  =  left_aabb_dist< d_min  # shape (N_points, )
+        right_better =  right_aabb_dist< d_min  # shape (N_points, )        
+
+        left_is_leaf = bvh.leafs[left_idx]
+        right_is_leaf= bvh.leafs[right_idx]
+
+        def set_if_leaf(d_min, d_idx, idx, is_leaf):
+            # if it is clipped it just returns the distance to the last triangle.
+            # this gets masked out anyway by is_leaf.
+            index_in_mesh = bvh.order[jnp.clip(idx, 0, N_leafs -1)]
+            leaf          = surface_points[index_in_mesh]
+            closest_leaf  = closest_point_on_triangle(point, leaf[0], leaf[1], leaf[2])            
+            d_leaf        = jnp.sum((closest_leaf - point)**2)            
+            d_idx_new     = jnp.where(is_leaf & (d_leaf < d_min), index_in_mesh, d_idx)
+            d_min_new     = jnp.where(is_leaf & (d_leaf < d_min), d_leaf, d_min)
+            return d_min_new, d_idx_new
+        
+        d_min_left, d_idx_left   = set_if_leaf(d_min,      d_idx,   left_idx, left_is_leaf)
+        d_min_both, d_idx_both   = set_if_leaf(d_min_left, d_idx_left, right_idx, right_is_leaf)
+                            
+        traverse_left    = jnp.logical_and(left_better,  jnp.logical_not(bvh.leafs[left_idx]))
+        traverse_right   = jnp.logical_and(right_better, jnp.logical_not(bvh.leafs[right_idx]))
+        
+        transverse_any   = jnp.logical_or(traverse_left, traverse_right)
+        transverse_both  = jnp.logical_and(traverse_left, traverse_right)
+
+        # if we hit one, stack stays the same, if we hit both, we add one, if we hit none, we go one lower
+        new_stack_idx = stack_idx + transverse_both.astype(jnp.int32) - (~transverse_any).astype(jnp.int32)        
+            
+        new_stack = jnp.where(
+            transverse_any,
+            jnp.where(
+                transverse_both,
+                stack.at[stack_idx + 1].set(right_idx).at[stack_idx].set(left_idx),
+                jnp.where(
+                    traverse_left,
+                    stack.at[stack_idx].set(left_idx),
+                    stack.at[stack_idx].set(right_idx)
+                )
+            ),
+            stack.at[stack_idx].set(-1)
+        )
+        return new_stack_idx, new_stack, d_min_both, d_idx_both, loop_idx + 1        
+    
+    stack = jnp.full((stack_size,  ), -1)     
+    
+    initial_stack = stack.at[..., 0].set(N_leafs)  # start with root node
+    initial_state = (0, initial_stack,jnp.inf, -1, 0)  # stack_idx, stack, hits, d_min, d_idx, loop_idx    
+    
+    final_stack_idx, final_stack, d_min, d_idx, n_loops = jax.lax.while_loop(
+        condition,
+        loop,
+        initial_state)
+    
+    closest_point = closest_point_on_triangle(point, 
+                              surface_points[d_idx,0], 
+                              surface_points[d_idx,1], 
+                              surface_points[d_idx,2])
+    return closest_point, jnp.sqrt(d_min), d_idx
+
+bvh_closest_point_vectorized = jax.jit(jnp.vectorize(_bvh_closest_point, excluded=(0,2), signature='(3)->(3),(),()'))
+
+@jax.jit
+def get_closest_points_on_mesh(points : jnp.ndarray, mesh) -> jnp.ndarray:
+    '''
+    Get closest points on triangle mesh for a set of points. 
+
+    Parameters:
+    -----------
+        points: jnp.ndarray [N,3]
+            Array of points
+        mesh: tuple of (positions, connectivity)
+            positions:    jnp.ndarray of shape (M, 3) representing the 3D coordinates of mesh vertices.
+            connectivity: jnp.ndarray of shape (K, 3) representing the triangle connectivity of the mesh.
+    Returns:
+    -----------
+        closest_points: jnp.ndarray [N,3]
+            Array of closest points on the mesh for each input point.
+        distances: jnp.ndarray [N,]
+            Squared distances from each input point to its closest point on the mesh.
+        triangle_indices: jnp.ndarray [N,]
+            Indices of the triangles on the mesh corresponding to the closest points.
+    '''
+    bvh = build_lbvh(mesh[0], mesh[1]) # BVH
+    return bvh_closest_point_vectorized(bvh, points, mesh)
+    

@@ -868,7 +868,7 @@ def mesh_tetrahedra(flux_surfaces : FluxSurface, s_values : jnp.ndarray, toroida
         An array of shape (n_tetrahedra, 4) containing the indices of the vertices for each tetrahedron.
 
     '''
-    include_axis = s_values[0] == 0.0
+    include_axis = bool(s_values[0] == 0.0)
     return _mesh_tetrahedra(flux_surfaces, s_values, include_axis, *toroidal_extent, n_theta, n_phi)
 
 def mesh_watertight_layers(flux_surfaces : FluxSurface, s_values : jnp.ndarray, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int):
