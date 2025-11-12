@@ -204,15 +204,17 @@ def create_fourier_surface_extension_interp_equal_arclength(flux_surfaces : Flux
     theta_al_sample              = jnp.linspace(0, 2*jnp.pi, n_theta_sample_arclength, endpoint=False)           #[ n_theta_sample_arclength ]
     phi                          = jnp.linspace(0, 2*jnp.pi/flux_surfaces.settings.nfp, n_phi, endpoint=False)   #[ n_phi ]
     theta_mg_al_sample, phi_mg_al_sample = jnp.meshgrid(theta_al_sample, phi, indexing='ij')                     #[n_theta_sample_arclength, n_phi]    
+
+    s_grid = jnp.atleast_2d(d + 1.0)
     
-    arc_lengths = _arc_length_theta_interpolating_s_grid_full_mod(flux_surfaces, d, theta_mg_al_sample, phi_mg_al_sample) # [n_theta_sample_arclength, n_phi]    
+    arc_lengths = _arc_length_theta_interpolating_s_grid_full_mod(flux_surfaces, s_grid, theta_mg_al_sample, phi_mg_al_sample) # [n_theta_sample_arclength, n_phi]    
     # Resample to get new theta values that are uniformly spaced in arc length
     # We batch over phi, so in_axes=1
     # Require the output to be also batched over phi, so out_axes=1
-    new_theta_mg  = jax.vmap(_resample_uniform_periodic_pchip, in_axes=(1, None), out_axes=1)(arc_lengths, n_theta) * 2 * jnp.pi   # batch over the phi: we need to sample arc length in theta and output the batch also in first second axis instead of first    
+    new_theta_mg  = jax.vmap(_resample_uniform_periodic_pchip, in_axes=(1, None), out_axes=1)(arc_lengths, n_theta) * 2 * jnp.pi
     _, phi_mg   = jnp.meshgrid(jnp.zeros(new_theta_mg.shape[0]), phi, indexing='ij')
 
-    s_interp = _interpolate_s_grid_full_mod(new_theta_mg, phi_mg, flux_surfaces.settings.nfp, d + 1.0) #[ n_theta, n_phi ]
+    s_interp = _interpolate_s_grid_full_mod(new_theta_mg, phi_mg, flux_surfaces.settings.nfp, s_grid) #[ n_theta, n_phi ]
 
     Rmnc, Zmns, mpol, ntor = create_fourier_representation(flux_surfaces, s_interp, new_theta_mg)
     return Rmnc, Zmns, mpol, ntor, flux_surfaces.settings.nfp
