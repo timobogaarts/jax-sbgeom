@@ -132,3 +132,21 @@ def ensure_coilset_rotation(coilset : CoilSet, positive_rotation : bool):
         CoilSet           : CoilSet with all coils rotation
     '''
     return type(coilset)(_ensure_coilset_rotation_vmap(coilset.coils, positive_rotation))
+
+def filter_coilset(coilset : CoilSet, mask):
+    return type(coilset)(jax.tree.map(lambda x : x[mask], coilset.coils))
+
+def filter_coilset_phi(coilset : CoilSet, phi_min : float, phi_max : float):
+    '''
+    Filters a CoilSet to only include coils with centre phi between phi_min and phi_max.
+
+    Parameters:
+        coilset (CoilSet) : CoilSet to filter
+        phi_min (float)   : minimum phi
+        phi_max (float)   : maximum phi
+    Returns:
+        CoilSet           : filtered CoilSet       
+    '''
+    phis = jnp.arctan2(coilset.centre()[:,1], coilset.centre()[:,0])
+    mask = (phis >= phi_min) & (phis <= phi_max)
+    return filter_coilset(coilset, mask)
