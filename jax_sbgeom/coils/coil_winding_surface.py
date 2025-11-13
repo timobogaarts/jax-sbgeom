@@ -1,12 +1,12 @@
 import jax 
 import jax_sbgeom
 from .coilset import ensure_coilset_rotation, order_coilset_phi
-from . import CoilSet
+from . import CoilSet, Coil
 from functools import partial
-from typing import Literal
+from typing import Literal, Union
 import jax.numpy as jnp
 from jax_sbgeom.jax_utils.optimize import OptimizationSettings
-
+from jax_sbgeom.jax_utils import raytracing as jax_raytracing
 @jax.jit
 def _s_softplus(d_i : jnp.ndarray, minimum_distance : float = 1e-5):    
     '''
@@ -171,7 +171,7 @@ def _create_coil_surface_loss_function(coilset : CoilSet, uniformity_penalty : f
     
     return loss_fn
 
-def optimize_coil_surface(coilset : CoilSet, uniformity_penalty : float = 1.0, repulsive_penalty : float = 0.1, n_samples_per_coil : int = 100, optimization_settings = jax_sbgeom.jax_utils.optimize.OptimizationSettings(100,1e-4)): 
+def optimize_coil_surface(coilset : CoilSet, uniformity_penalty : float = 1.0, repulsive_penalty : float = 0.1, n_samples_per_coil : int = 100, optimization_settings = OptimizationSettings(100,1e-4)): 
     '''
     Optimize the sampling points of a CoilSet for minimum distance between adjacent coils with penalties for non-uniformity and closeness of points.
     This ensures that the optimizer does not find pathological solutions where points cluster together. The CoilSet is first ordered in phi and ensured to have positive orientation.
@@ -387,3 +387,27 @@ def create_coil_winding_surface(coilset : CoilSet, n_points_per_coil : int, n_po
     '''
     ordered_coilset = ensure_coilset_rotation(order_coilset_phi(coilset), True)         
     return _create_coil_winding_surface_from_parameters(ordered_coilset, n_points_per_coil, n_points_phi, jnp.ones(coilset.n_coils * n_points_per_coil), surface_type)
+
+@partial(jax.jit, static_argnums=(2,))
+def calculate_normals_from_closest_point_on_mesh(coil : Union[Coil, CoilSet], external_mesh, n_coil_samples : int):
+    '''
+    Calculate normals at coil positions by finding the closest points on an external mesh and using that normal.
+
+    Parameters:
+    ----------
+    coil : Union[Coil, CoilSet]
+        Coil or CoilSet containing the coil(s).
+    external_mesh : jax_sbgeom.jax_utils.mesh.Mesh
+        External mesh to find closest points on.
+    n_coil_samples : int
+        Number of samples along the coil(s).
+    Returns:
+    -------
+    positions : jnp.ndarray [n_coils, n_coil_samples, 3]
+        Positions along the coil(s).
+    normals : jnp.ndarray [n_coils, n_coil_samples, 3]
+        Normals at the coil positions.
+    '''
+    positions = coil.position(jnp.linspace(0,1,n_coil_samples, endpoint=False)) #[n_coils, n_coil_samples, 3]        
+    closest_points, dmin, d_idx = jax_sbgeom.jax_utils.raytracing.get_closest_points_on_mesh(positions, external_mesh)    
+    return positions, jax_sbgeom.jax_utils.utils.surface_normals_from_mesh(external_mesh)[d_idx]

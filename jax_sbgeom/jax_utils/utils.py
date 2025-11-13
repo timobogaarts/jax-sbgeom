@@ -384,3 +384,58 @@ def surface_normals_from_mesh(mesh):
     normal = jnp.cross(e_1, e_2, axis=-1)
     normals = normal / jnp.linalg.norm(normal, axis=-1, keepdims=True)
     return normals
+
+def _boundary_normal_vectors_from_tetrahedron(tetrahedron : jnp.ndarray):
+    '''
+    Create a boundary vector from tetrahedron
+
+    Parameters
+    -----------
+    tetrahedron : jnp.ndarray [..., 4,3] 
+        Tetrahedron vertex locations
+    Returns
+    -------
+    boundary : jnp.ndarray [..., 4,3]
+        Normal
+    '''
+    assert tetrahedron.shape[-2] == 4 and tetrahedron.shape[-1] == 3, "Tetrahedron must have shape [...,4,3]"
+    v0 = tetrahedron[...,1,:] - tetrahedron[...,0,:]
+    v1 = tetrahedron[...,2,:] - tetrahedron[...,0,:]
+    v2 = tetrahedron[...,3,:] - tetrahedron[...,0,:]
+    v3 = tetrahedron[...,2,:] - tetrahedron[...,1,:]
+    v4 = tetrahedron[...,3,:] - tetrahedron[...,1,:]
+    n0 = jnp.cross(v0, v1)
+    n1 = jnp.cross(v2, v0)
+    n2 = jnp.cross(v1, v2)
+    n3 = jnp.cross(v4, v3)
+    normals = jnp.stack([n0, n1, n2, n3], axis=-2)
+    positive_volume = jnp.sign(jnp.sum( (v0 * jnp.cross(v2, v1)), axis= -1)) # ...
+    normals = normals / jnp.linalg.norm(normals, axis=-1, keepdims=True)  #[...,4,3]
+    return normals * positive_volume[..., None, None]
+
+
+def _boundary_centroids_from_tetrahedron(tetrahedron : jnp.ndarray):
+    '''
+    Create the centroids of all boundaries from tetrahedron
+
+    Parameters
+    -----------
+    tetrahedra : jnp.ndarray [..., 4,3] 
+        Tetrahedron vertex locations
+    Returns
+    ------- 
+    centroids : jnp.ndarray [..., 4,3]
+        Centroids
+    
+    '''
+    assert tetrahedron.shape[-2] == 4 and tetrahedron.shape[-1] == 3, "Tetrahedron must have shape [...,4,3]"
+    v0 = tetrahedron[...,0,:]
+    v1 = tetrahedron[...,1,:]
+    v2 = tetrahedron[...,2,:]
+    v3 = tetrahedron[...,3,:]
+    c0 = (v0 + v1 + v2) / 3.0
+    c1 = (v0 + v1 + v3) / 3.0
+    c2 = (v0 + v2 + v3) / 3.0
+    c3 = (v1 + v2 + v3) / 3.0
+    centroids = jnp.stack([c0, c1, c2, c3,], axis=-2)
+    return centroids
