@@ -670,7 +670,38 @@ def _arc_length_theta_interpolating_s_grid_full_mod(flux_surface : FluxSurface, 
         Toroidal angles to compute arc length derivative at 
     Returns:
     --------
-    arc_length_derivative : jnp.ndarray
-        Arc length derivative with respect to theta at (theta, phi) with interpolated s values.        
+    arc_length : jnp.ndarray
+        Arc length with respect to theta at (theta, phi) with interpolated s values.        
     '''    
     return jnp.linalg.norm(_dx_dtheta_interpolating_s_grid_full_mod(flux_surface, s_grid, theta, phi), axis=-1)
+
+@partial(jax.jit, static_argnums = (2))
+def _arc_length_theta_interpolating_s_grid_full_mod_finite_difference(flux_surface : FluxSurface, s_grid : jnp.ndarray, n_theta : jnp.ndarray, phi : float):
+    '''
+    Compute the arc length derivative with respect to theta of a flux surface at interpolated s values using finite differences. 
+
+    The _arc_length_theta_interpolating_s_grid_full_mod function uses JAX autodiff to compute the derivative, this can be somewhat slow for especially FluxSurfaceNormalExtendedConstantPhi.
+    Instead, this uses the fact that we sample anyway from a grid to compute the derivative using finite differences.
+    
+    The grid of s values is assumed to be a uniformly sampled full module grid: s[0,0] is (0,0). s[-1,-1] is (2pi, 2pi/nfp)
+    
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        Flux surface to compute position on.
+    s_grid : jnp.ndarray [n_theta_sampled, n_phi_sampled]
+        Grid of s values to interpolate from. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)
+    n_theta : jnp.ndarray
+        Number of theta points to use for finite difference
+    phi : float
+        Toroidal angle to compute arc length derivative at
+    Returns:
+    --------    
+    arc_length : jnp.ndarray        
+    '''
+    
+    theta_grid = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
+    positions  = flux_surface.cartesian_position(_interpolate_s_grid_full_mod(theta_grid, phi, flux_surface.settings.nfp, s_grid), theta_grid, phi)
+    du         = theta_grid[1] - theta_grid[0]
+    x          = [jnp.roll(positions, i, axis=0) for i in [0,1,2,3,4,-4,-3,-2,-1]]
+    return jnp.linalg.norm(1 /280 * x[-4] + -4 / 105 * x[-3] +  1/5 * x[-2] + -4/5 * x[-1] + 4/5 * x[1] + -1/5 * x[2] + 4/105 * x[3] + -1/280 * x[4], axis=1)  / du    
