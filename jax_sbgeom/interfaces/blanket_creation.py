@@ -28,6 +28,10 @@ class LayeredDiscreteBlanket(LayeredBlanket):
     def layer_slice(self, layer_index : int):
         return _compute_layer_slice(self.n_discrete_layers, self.n_theta, self.n_phi, layer_index)
     
+    def __post_init__(self) :
+        if len(self.resolution_layers) != self.n_layers:
+            raise ValueError(f"Length of resolution_layers {len(self.resolution_layers)} does not match number of layers {self.n_layers}.")
+    
     @property 
     def n_discrete_layers(self):
         return jnp.sum(jnp.array(self.resolution_layers))

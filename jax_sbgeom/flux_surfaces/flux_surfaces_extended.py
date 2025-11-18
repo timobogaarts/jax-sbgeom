@@ -5,7 +5,7 @@ import numpy as onp
 from dataclasses import dataclass
 from jax_sbgeom.jax_utils.utils import stack_jacfwd
 from functools import partial
-from .flux_surfaces_base import FluxSurface, ToroidalExtent, FluxSurfaceSettings, FluxSurfaceData, _data_settings_from_hdf5, _cartesian_to_cylindrical, _principal_curvatures_interpolated
+from .flux_surfaces_base import FluxSurface, ToroidalExtent, FluxSurfaceSettings, FluxSurfaceData, _data_settings_from_hdf5, _cartesian_to_cylindrical, _principal_curvatures_interpolated, _cylindrical_position_interpolated, _cylindrical_to_cartesian
 
 from .flux_surfaces_base import _cartesian_position_interpolated, _normal_interpolated
 
@@ -233,23 +233,27 @@ def _normal_extended_constant_phi_principal_curvatures(data : FluxSurfaceData, s
 #                                                                          Fourier Extended
 # ===================================================================================================================================================================================
 
+### 
 @partial(jax.jit)
-def _fourier_extended_cartesian_position(data : FluxSurfaceData, settings  : FluxSurface, extension_data : FluxSurfaceData, extension_settings : FluxSurfaceSettings, s, theta, phi):
+def _fourier_extended_cylindrical_position(data : FluxSurfaceData, settings  : FluxSurfaceSettings, extension_data : FluxSurfaceData, extension_settings : FluxSurfaceSettings, s, theta, phi):
     # This is not necessarily completely efficient: but we cannot avoid evaluating both positions in batched operations. 
     n_surf_extension    = jnp.maximum(extension_data.Rmnc.shape[0], 2) # if there's only one extension surface this ensures we get a valid result (s=0.5 interpolation on the extension is just the surface itself anyway)
-    
-    inner_positions     = _cartesian_position_interpolated(data, settings, jnp.minimum(s, 1.0), theta, phi) 
+
+    inner_positions     = _cylindrical_position_interpolated(data, settings, jnp.minimum(s, 1.0), theta, phi) 
     d_value             = jnp.maximum(s - 1.0, 0.0)
     d_value_extension   = jnp.maximum(d_value - 1.0, 0.0)
     normalized_d_value  = d_value_extension / (n_surf_extension - 1.0)
 
-    extension_positions    = _cartesian_position_interpolated(extension_data, extension_settings, normalized_d_value , theta, phi)
-    extension_positions_d0 = _cartesian_position_interpolated(extension_data, extension_settings, jnp.zeros_like(s) , theta, phi)    
+    extension_positions    = _cylindrical_position_interpolated(extension_data, extension_settings, normalized_d_value , theta, phi)
+    extension_positions_d0 = _cylindrical_position_interpolated(extension_data, extension_settings, jnp.zeros_like(s) , theta, phi)    
     only_extension         = jnp.array(s >=2.0)
-
+    
     return jnp.where(only_extension[..., None], extension_positions,
                      inner_positions + (extension_positions_d0- inner_positions) * d_value[..., None])
 
+@partial(jax.jit)
+def _fourier_extended_cartesian_position(data : FluxSurfaceData, settings  : FluxSurface, extension_data : FluxSurfaceData, extension_settings : FluxSurfaceSettings, s, theta, phi):    
+    return _cylindrical_to_cartesian(_fourier_extended_cylindrical_position(data, settings, extension_data, extension_settings, s, theta, phi))
     
 
 
