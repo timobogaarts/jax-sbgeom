@@ -333,6 +333,48 @@ class ToroidalExtent:
 #                                                                           Positions
 # ===================================================================================================================================================================================
 @partial(jax.jit)
+def _cylindrical_position_direct(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, theta, phi):        
+    assert Rmnc.ndim == 1, "Rmnc must be a 1D array but is of shape {}".format(Rmnc.shape)
+    assert Rmnc.shape == Zmns.shape == mpol_vector.shape == ntor_vector.shape, "Rmnc, Zmns, mpol_vector, ntor_vector must have the same shape, but are {}, {}, {}, {}".format(Rmnc.shape, Zmns.shape, mpol_vector.shape, ntor_vector.shape)
+    # This in essence computes:
+    # R   = jnp.sum(Rmnc_interp[..., None] * jnp.cos(mpol_vector[..., None] * theta[None, ...] - ntor_vector[..., None] * phi[None, ...]), axis=-1)
+    # However, although the above can be more efficient, it creates large intermediate arrays and is thus undesirable.
+    # Also, we call interpolate_array once per mode and per point in this setup
+    # Instead, we could have vectorized this calculation over all points, but that would also create large intermediate arrays.
+    
+    # Now, no n_modes x n_points arrays are created.
+
+    # This function is valid for both s,theta,phi all scalars and broadcastable arrays. 
+    def fourier_sum(vals, i):
+        R, Z = vals
+        R = R + Rmnc[i] * jnp.cos(mpol_vector[i] * theta - ntor_vector[i] * phi)
+        Z = Z + Zmns[i] * jnp.sin(mpol_vector[i] * theta - ntor_vector[i] * phi)
+        return (R,Z), None
+    
+    # The fourier_sum function automatically broadcast arrays. However, we need to ensure that 
+    # we start the scan with a zero object that has the correct final shape. Thus,
+    # we create dummy arrays that have the correct shape.
+    # The phi_bc  is required to ensure the final array phi is stackable with R, Z.
+    theta_bc, phi_bc = jnp.broadcast_arrays(theta, phi)
+    
+    n_modes = Rmnc.shape[0]
+    R,Z = jax.lax.scan(fourier_sum, (jnp.zeros_like(theta_bc), jnp.zeros_like(theta_bc)), jnp.arange(n_modes))[0]    
+    return jnp.stack([R, Z, phi_bc],axis=-1)
+
+@partial(jax.jit)
+def _cartesian_position_direct(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, theta, phi):
+    RZphi = _cylindrical_position_direct(Rmnc, Zmns, mpol_vector, ntor_vector, theta, phi)
+    return _cylindrical_to_cartesian(RZphi)
+
+_dx_dtheta_direct = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_direct, argnums=4), excluded=(0,1,2,3), signature='(),()->(3)'))
+
+@partial(jax.jit)
+def _arc_length_theta_direct(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, theta, phi):
+    dx_dtheta = _dx_dtheta_direct(Rmnc, Zmns, mpol_vector, ntor_vector, theta, phi)
+    dx_dtheta_norm = jnp.linalg.norm(dx_dtheta, axis=-1)
+    return dx_dtheta_norm
+
+@partial(jax.jit)
 def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
     
     

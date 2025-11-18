@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 from .flux_surfaces_base import _create_mpol_vector, _create_ntor_vector, FluxSurface, FluxSurfaceData, FluxSurfaceSettings, _interpolate_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod_finite_difference
-
+from .flux_surfaces_base import _arc_length_theta_direct, _cylindrical_position_direct
 from .flux_surfaces_extended import FluxSurfaceNormalExtended, FluxSurfaceNormalExtendedNoPhi, FluxSurfaceNormalExtendedConstantPhi, FluxSurfaceFourierExtended
 from jax_sbgeom.jax_utils.utils import bilinear_interp, _resample_uniform_periodic_pchip, _resample_uniform_periodic_linear
 from warnings import warn
@@ -136,11 +136,27 @@ def _convert_to_different_ntor_mpol(array : jnp.ndarray, mpol_new : int, ntor_ne
         
     return array_new
 
+@partial(jax.jit, static_argnums = (4, 5, 6))
+def convert_to_equal_arclength(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int) -> FluxSurfaceData:    
+    theta_s              = jnp.linspace(0, 2 * jnp.pi,       n_theta_s_arclength, endpoint=False)
+    phi_s                = jnp.linspace(0, 2 * jnp.pi / ntor_vector[1], n_phi,   endpoint=False) # ntor_vector[1] is nfp
+    theta_mg_s, phi_mg_s = jnp.meshgrid(theta_s, phi_s, indexing='ij')    
+    arc_lengths          = _arc_length_theta_direct(Rmnc, Zmns, mpol_vector, ntor_vector, theta_mg_s, phi_mg_s) #[n_theta_s_arclength, n_phi]
+    
+    new_theta_mg         = jax.vmap(_resample_uniform_periodic_pchip, in_axes=(1, None), out_axes=1)(arc_lengths, n_theta) * 2 * jnp.pi # [n_theta_sample_arclength, n_phi]                   
+    _, phi_mg            = jnp.meshgrid(jnp.zeros(new_theta_mg.shape[0]), phi_s, indexing='ij')  # [n_theta_sample_arclength, n_phi]
+
+    RZphi_sampled        = _cylindrical_position_direct(Rmnc, Zmns, mpol_vector, ntor_vector, new_theta_mg, phi_mg)  # [n_theta_sample_arclength, n_phi, 3]
+    R_grid               = RZphi_sampled[..., 0]
+    Z_grid               = RZphi_sampled[..., 1]
+    Rmnc, Zmns           = _rz_to_vmec_representation(R_grid, Z_grid)
+    mpol_new, ntor_new   = mpol_ntor_from_ntheta_nphi(n_theta, n_phi)    
+    return Rmnc, Zmns, mpol_new, ntor_new
+
 def mpol_ntor_from_ntheta_nphi(n_theta : int, n_phi : int):    
     mpol = n_theta // 2
     ntor = n_phi   // 2
     return mpol, ntor
-
 
 def create_fourier_representation(flux_surface : FluxSurface, s : jnp.ndarray, theta_grid : jnp.ndarray):
     # Static Checks
@@ -156,8 +172,8 @@ def create_fourier_representation(flux_surface : FluxSurface, s : jnp.ndarray, t
         warn("FluxSurface base class does not extend beyond the LCFS. Any conversion with s>0.0 will reproduce the LCFS", UserWarning)
     
 
-    n_theta = theta_grid.shape[0]
-    n_phi   = theta_grid.shape[1]
+    n_theta                  = theta_grid.shape[0]
+    n_phi                    = theta_grid.shape[1]
 
     phi_grid                 = jnp.linspace(0, 2*jnp.pi / flux_surface.settings.nfp, n_phi, endpoint=False)    
     _, phi_mg                = jnp.meshgrid(jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False), phi_grid, indexing='ij')
@@ -171,8 +187,7 @@ def create_fourier_representation(flux_surface : FluxSurface, s : jnp.ndarray, t
     mpol, ntor               = mpol_ntor_from_ntheta_nphi(n_theta, n_phi)
     return Rmnc, Zmns, mpol, ntor
 
-
-
+@partial(jax.jit, static_argnums = (2,3))
 def create_fourier_surface_extension_interp(flux_surfaces : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int):
     '''
     Create a Fourier representation of a no-phi extended flux surface with an interpolated extension distance. 
@@ -189,114 +204,58 @@ def create_fourier_surface_extension_interp(flux_surfaces : FluxSurface, d : jnp
         Number of toroidal points in the output Fourier representation.
     Returns:
     --------
-    fs_jax : FluxSurface
-        Fourier representation of the extended flux surface.
+    Rmnc : jnp.ndarray
+        Fourier coefficients of R in VMEC representation.
+    Zmns : jnp.ndarray
+        Fourier coefficients of Z in VMEC representation.
+    mpol : int
+        Number of poloidal modes in the Fourier representation [= n_theta // 2]
+    ntor : int
+        Number of toroidal modes in the Fourier representation [= n_phi // 2]
+    nfp : int
+        Number of field periods of the flux surface [same as input flux surface]
     '''
-    theta, phi       = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False), jnp.linspace(0, 2*jnp.pi/flux_surfaces.settings.nfp, n_phi, endpoint=False)
-    theta_mg, phi_mg = jnp.meshgrid(theta, phi, indexing='ij')
+    theta, phi             = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False), jnp.linspace(0, 2*jnp.pi/flux_surfaces.settings.nfp, n_phi, endpoint=False)
+    theta_mg, phi_mg       = jnp.meshgrid(theta, phi, indexing='ij')
 
-    s_interp               = _interpolate_s_grid_full_mod(theta_mg, phi_mg, flux_surfaces.settings.nfp, d + 1.0)
+    s_interp               = _interpolate_s_grid_full_mod(theta_mg, phi_mg, flux_surfaces.settings.nfp, jnp.atleast_2d(d) + 1.0)
     Rmnc, Zmns, mpol, ntor = create_fourier_representation(flux_surfaces, s_interp, theta_mg)
     return Rmnc, Zmns, mpol, ntor, flux_surfaces.settings.nfp
 
-@partial(jax.jit, static_argnums=(2,3,4,5))
-def create_fourier_surface_extension_interp_equal_arclength(flux_surfaces : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int, finite_difference : bool = True):
+@partial(jax.jit, static_argnums = (2,3,4))
+def create_fourier_surface_extension_interp_equal_arclength(flux_surface : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int):    
     '''
-    Create a Fourier representation of a no-phi extended flux surface with an interpolated extension distance. 
-    Equal arclength is used to resample theta. 
+    Create a Fourier representation of a no-phi extended flux surface with an interpolated extension distance and resampled to equal arclength.
 
     Parameters:
     -----------
-    flux_surfaces : FluxSurface
-        Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
+    flux_surface : FluxSurface
+        Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi out for FFT)
     d : jnp.ndarray [n_theta_sampled, n_phi_sampled]
         Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)
     n_theta : int
-        Number of poloidal points for Fourier transforming
+        Number of poloidal points in the output Fourier representation.
     n_phi : int
-        Number of toroidal points for Fourier transforming
-    n_theta_sample_arclength : int
-        Number of poloidal points to use when sampling for equal arclength resampling.
-    finite_difference : bool
-        Whether to use finite difference to compute the arclength derivative. Default True. Autodiff is also possible, but compiles significantly slower.
+        Number of toroidal points in the output Fourier representation.
+    n_theta_s_arclength : int
+        Number of poloidal points to use for the equal arclength resampling.
     Returns:
     --------
     Rmnc : jnp.ndarray
-        Fourier Rmnc coefficients of the extended flux surface.
+        Fourier coefficients of R in VMEC representation.
     Zmns : jnp.ndarray
-        Fourier Zmns coefficients of the extended flux surface.
+        Fourier coefficients of Z in VMEC representation.
     mpol : int
-        Number of poloidal modes of the extended flux surface.
+        Number of poloidal modes in the Fourier representation [= n_theta // 2]
     ntor : int
-        Number of toroidal modes of the extended flux surface.
+        Number of toroidal modes in the Fourier representation [= n_phi // 2]
     nfp : int
-        Number of field periods of the extended flux surface.
-        
+        Number of field periods of the flux surface [same as input flux surface]
     '''
-    theta_al_sample              = jnp.linspace(0, 2*jnp.pi, n_theta_s_arclength, endpoint=False)           #[ n_theta_sample_arclength ]
-    phi                          = jnp.linspace(0, 2*jnp.pi/flux_surfaces.settings.nfp, n_phi, endpoint=False)   #[ n_phi ]
-    theta_mg_al_sample, phi_mg_al_sample = jnp.meshgrid(theta_al_sample, phi, indexing='ij')                     #[n_theta_sample_arclength, n_phi]    
-
-    s_grid                  = jnp.atleast_2d(d + 1.0)    
-    if finite_difference:
-        arc_lengths             = jax.vmap(_arc_length_theta_interpolating_s_grid_full_mod_finite_difference, in_axes = (None, None,   None, 0), out_axes=(1))(flux_surfaces, s_grid, n_theta_s_arclength, phi) # [n_theta_sample_arclength, n_phi]                
-    else:
-        arc_lengths             = _arc_length_theta_interpolating_s_grid_full_mod(flux_surfaces, s_grid, theta_mg_al_sample, phi_mg_al_sample) # [n_theta_sample_arclength, n_phi]                   
-    
-    # Resample to get new theta values that are uniformly spaced in arc length
-    # We batch over phi, so in_axes=1
-    # Require the output to be also batched over phi, so out_axes=1
-    new_theta_mg            = jax.vmap(_resample_uniform_periodic_pchip, in_axes=(1, None), out_axes=1)(arc_lengths, n_theta) * 2 * jnp.pi    
-    _, phi_mg               = jnp.meshgrid(jnp.zeros(new_theta_mg.shape[0]), phi, indexing='ij')
-
-    s_interp                = _interpolate_s_grid_full_mod(new_theta_mg, phi_mg, flux_surfaces.settings.nfp, s_grid) #[ n_theta, n_phi ]
-
-    Rmnc, Zmns, mpol, ntor = create_fourier_representation(flux_surfaces, s_interp, new_theta_mg)
-    return Rmnc, Zmns, mpol, ntor, flux_surfaces.settings.nfp
-
-
-def _create_fourier_surface_extension_interp_equal_arclength_total(flux_surface : FluxSurface, d_layers : tuple,  n_theta_s : int, n_phi_s : int, n_theta_s_arclength : int, finite_difference : bool):
-    '''
-    Create a Fourier representation of a no-phi extended flux surface with an interpolated extension distance. 
-    Equal arclength is used to resample theta. Convenience function to create multiple layers at once.
-
-    Parameters:
-    -----------
-    flux_surfaces : FluxSurface
-        Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
-    d_layers : tuple of jnp.ndarray or float
-        Distance functions to extend the flux surface with. These do not have to be the same shape. Floats are also allowed for uniform extension.
-    n_theta_s : int
-        Number of poloidal points for Fourier transforming
-    n_phi_s : int
-        Number of toroidal points for Fourier transforming
-    n_theta_sample_arclength : int
-        Number of poloidal points to use when sampling for equal arclength resampling.
-    finite_difference : bool
-        Whether to use finite difference to compute the arclength derivative. Default True. Autodiff is also possible, but compiles significantly slower.
-    Returns:
-    --------
-    Rmnc : jnp.ndarray
-        Fourier Rmnc coefficients of the extended flux surface.
-    Zmns : jnp.ndarray
-        Fourier Zmns coefficients of the extended flux surface.
-    mpol : int
-        Number of poloidal modes of the extended flux surface.
-    ntor : int
-        Number of toroidal modes of the extended flux surface.
-    nfp : int
-        Number of field periods of the extended flux surface.
-    '''
-    # we cannot vmap this: the elements in d_layers can have different shapes
-    fs_extensions = []
-    for d_i in d_layers:        
-        fs_extensions.append(create_fourier_surface_extension_interp_equal_arclength(flux_surface, d_i, n_theta = n_theta_s, n_phi = n_phi_s, n_theta_s_arclength = n_theta_s_arclength, finite_difference = finite_difference))
-    Rmnc = jnp.stack([fs_extensions[i][0] for i in range(len(fs_extensions))], axis=0)
-    Zmns = jnp.stack([fs_extensions[i][1] for i in range(len(fs_extensions))], axis=0)
-    mpol = fs_extensions[0][2]
-    ntor = fs_extensions[0][3]    
-    return Rmnc, Zmns, mpol, ntor, flux_surface.settings.nfp
-
+    mpol, ntor = mpol_ntor_from_ntheta_nphi(n_theta, n_phi)
+    mpol_vector,  ntor_vector = _create_mpol_vector(mpol, ntor), _create_ntor_vector(mpol, ntor, 1) * flux_surface.settings.nfp
+    Rmnc, Zmns, _, _, _ = create_fourier_surface_extension_interp(flux_surface, d, n_theta, n_phi)
+    return *convert_to_equal_arclength(Rmnc, Zmns, mpol_vector, ntor_vector, n_theta, n_phi, n_theta_s_arclength), flux_surface.settings.nfp
 
 def _create_fluxsurface_from_rmnc_zmns(rmnc : jnp.ndarray, zmns : jnp.ndarray, mpol : int, ntor : int, nfp : int, type : Type =  FluxSurface):
     # we cannot jit this since it involves creation of objects.
@@ -309,8 +268,5 @@ def _create_fluxsurface_from_rmnc_zmns(rmnc : jnp.ndarray, zmns : jnp.ndarray, m
         Zmns_ext = zmns
     
     settings = FluxSurfaceSettings(mpol, ntor, nfp, Rmnc_ext.shape[0])
-    fs_jax   = FluxSurface(FluxSurfaceData.from_rmnc_zmns_settings(Rmnc_ext, Zmns_ext, settings), settings)
+    fs_jax   = type(FluxSurfaceData.from_rmnc_zmns_settings(Rmnc_ext, Zmns_ext, settings), settings)
     return fs_jax
-
-def create_fourier_surface_extensions_interp_equal_arclength(flux_surface : FluxSurface, d_layers : tuple,  n_theta_s : int, n_phi_s : int, n_theta_s_arclength : int, finite_difference : bool):    
-    return FluxSurfaceFourierExtended.from_flux_surface_and_extension(flux_surface, _create_fluxsurface_from_rmnc_zmns(*_create_fourier_surface_extension_interp_equal_arclength_total(flux_surface, d_layers, n_theta_s, n_phi_s, n_theta_s_arclength, finite_difference)))
