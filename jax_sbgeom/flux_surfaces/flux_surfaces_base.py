@@ -5,8 +5,18 @@ import numpy as onp
 from dataclasses import dataclass
 from jax_sbgeom.jax_utils.utils import stack_jacfwd, interpolate_array
 from functools import partial
-@partial(jax.jit, static_argnums = (0,1))
-def _create_mpol_vector(mpol : int, ntor : int):    
+import equinox as eqx
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class FluxSurfaceSettings:
+    mpol : int     # maximum poloidal mode number [inclusive]
+    ntor : int     # maximum toroidal mode number [inclusive]
+    nfp  : int     # number of field periods    
+
+
+@eqx.filter_jit
+def _create_mpol_vector(settings : FluxSurfaceSettings):    
     '''
     Create the poloidal mode number vector for VMEC representation.
 
@@ -27,12 +37,12 @@ def _create_mpol_vector(mpol : int, ntor : int):
         The poloidal mode number vector.
     '''
     return jnp.concatenate([
-        jnp.zeros(ntor + 1, dtype=int),
-        jnp.repeat(jnp.arange(1, mpol + 1), 2 * ntor + 1)
+        jnp.zeros(settings.ntor + 1, dtype=int),
+        jnp.repeat(jnp.arange(1, settings.mpol + 1), 2 * settings.ntor + 1)
     ])
 
-@partial(jax.jit, static_argnums = (0,1))
-def _create_ntor_vector(mpol : int, ntor : int, symm : int):
+@eqx.filter_jit
+def _create_ntor_vector(settings : FluxSurfaceSettings):
     '''
     Create the toroidal mode number vector for VMEC representation.
 
@@ -54,9 +64,9 @@ def _create_ntor_vector(mpol : int, ntor : int, symm : int):
 
     '''
     return jnp.concatenate([
-        jnp.arange(ntor + 1),
-        jnp.tile(jnp.arange(-ntor, ntor + 1), mpol)
-    ]) * symm
+        jnp.arange(settings.ntor + 1),
+        jnp.tile(jnp.arange(-settings.ntor, settings.ntor + 1), settings.mpol)
+    ]) * settings.nfp
     
 
 
@@ -173,23 +183,26 @@ reverse_theta_total  = jax.jit(jax.vmap(_reverse_theta_single, in_axes=(None, No
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
-class FluxSurfaceSettings:
-    mpol : int     # maximum poloidal mode number [inclusive]
-    ntor : int     # maximum toroidal mode number [inclusive]
-    nfp  : int     # number of field periods    
+class FluxSurfaceModes:
+    mpol_vector : jnp.ndarray
+    ntor_vector : jnp.ndarray
+
+    @classmethod
+    def from_settings(cls, settings : FluxSurfaceSettings):
+        mpol_vector = _create_mpol_vector(settings)
+        ntor_vector = _create_ntor_vector(settings)
+        return cls(mpol_vector=mpol_vector, ntor_vector=ntor_vector)
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class FluxSurfaceData:
     Rmnc : jnp.ndarray
-    Zmns : jnp.ndarray
-    mpol_vector : jnp.ndarray
-    ntor_vector : jnp.ndarray    
+    Zmns : jnp.ndarray    
 
     @classmethod
     def from_rmnc_zmns_settings(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, settings : FluxSurfaceSettings, make_normals_point_outwards : bool = True):
-        mpol_vector = _create_mpol_vector(settings.mpol, settings.ntor)
-        ntor_vector = _create_ntor_vector(settings.mpol, settings.ntor, settings.nfp)
+        mpol_vector = _create_mpol_vector(settings)
+        ntor_vector = _create_ntor_vector(settings)
 
         if make_normals_point_outwards:
             flip_theta = _check_whether_make_normals_point_outwards_required(Rmnc, Zmns, mpol_vector)
@@ -211,12 +224,10 @@ class FluxSurfaceData:
 
         assert(Rmnc.shape == Zmns.shape)        
         assert(Rmnc.shape[1] == len(mpol_vector))
-        return cls(Rmnc=Rmnc_mod, Zmns=Zmns_mod, mpol_vector=mpol_vector, ntor_vector=ntor_vector)
-
-    def __iter__(self):
-        return iter((self.Rmnc, self.Zmns, self.mpol_vector, self.ntor_vector))
+        return cls(Rmnc=Rmnc_mod, Zmns=Zmns_mod)
     
-def _data_settings_from_hdf5(filename : str, make_normals_point_outwards : bool = True):
+    
+def _data_modes_settings_from_hdf5(filename : str, make_normals_point_outwards : bool = True):
     """Load a FluxSurface from an VMEC-type HDF5 file.
 
         Parameters:
@@ -238,18 +249,20 @@ def _data_settings_from_hdf5(filename : str, make_normals_point_outwards : bool 
         ntor = int(f['ntor'][()])                        
         nfp  = int(f['nfp'][()])
 
-        assert( jnp.all( _create_mpol_vector(mpol, ntor) == jnp.array(f['xm'])))      # sanity check
-        assert( jnp.all( _create_ntor_vector(mpol, ntor, nfp) == jnp.array(f['xn']))) # sanity check
-                
         settings = FluxSurfaceSettings(
             mpol=mpol,
             ntor=ntor,
             nfp=nfp,                            
         )
 
-        data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings)
 
-        return data, settings
+        assert( jnp.all( _create_mpol_vector(settings) == jnp.array(f['xm']))) # sanity check
+        assert( jnp.all( _create_ntor_vector(settings) == jnp.array(f['xn']))) # sanity check
+        
+        data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings)        
+        modes = FluxSurfaceModes.from_settings(settings)
+        
+        return data,  modes, settings
     
 
 @jax.tree_util.register_dataclass
@@ -260,48 +273,75 @@ class FluxSurface:
 
     Attributes:
     -----------
-    Rmnc : (nsurf, nmodes) jnp.ndarray
-        Radial Fourier coefficients for the R coordinate.
-    Zmns : (nsurf, nmodes) jnp.ndarray
-        Vertical Fourier coefficients for the Z coordinate.
+    data     : FluxSurfaceData
+        Data object containing the Fourier coefficients Rmnc and Zmns
+    modes    : FluxSurfaceModes
+        Modes object containing the mode vectors mpol_vector and ntor_vector
     settings : FluxSurfaceSettings
         Settings object containing parameters like mpol, ntor, nfp, and the mode vectors
     '''
-    data            : FluxSurfaceData = None
+    data            : FluxSurfaceData     = None
+    modes           : FluxSurfaceModes    = None
     settings        : FluxSurfaceSettings = None
     
 
     @classmethod
     def from_hdf5(cls, filename : str):        
-        data, settings = _data_settings_from_hdf5(filename)
-        return cls(data=data, settings=settings)
+        data, modes, settings = _data_modes_settings_from_hdf5(filename)
+        return cls(data=data, modes = modes, settings=settings)
     
     @classmethod
     def from_flux_surface(cls, flux_surface_base : "FluxSurface"):
-        return cls(data = flux_surface_base.data, settings = flux_surface_base.settings)
+        return cls(data = flux_surface_base.data, modes = flux_surface_base.modes, settings = flux_surface_base.settings)
     
     @classmethod
-    def from_rmnc_zmns_mpol_ntor(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol : int, ntor : int, nfp : int, make_normals_point_outwards : bool = True):        
-        settings = FluxSurfaceSettings(
-            mpol=mpol,
-            ntor=ntor,
-            nfp=nfp,                            
-        )
+    def from_rmnc_zmns_settings(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, settings : FluxSurfaceSettings, make_normals_point_outwards : bool = True):                
         data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings, make_normals_point_outwards)
-        return cls(data=data, settings=settings)
+        modes = FluxSurfaceModes.from_settings(settings)
+        return cls(data=data, modes = modes, settings=settings)
+    
+    @classmethod 
+    def from_data_settings(cls, data : FluxSurfaceData, settings : FluxSurfaceSettings):        
+        modes = FluxSurfaceModes.from_settings(settings)        
+        return cls(data=data, modes = modes, settings=settings)    
+    @classmethod 
+    def from_data_settings_full(cls, data : FluxSurfaceData, settings : FluxSurfaceSettings):        
+        data = FluxSurfaceData(Rmnc = jnp.atleast_2d(data.Rmnc), Zmns = jnp.atleast_2d(data.Zmns))
+        modes = FluxSurfaceModes.from_settings(settings)        
+        return cls(data=data, modes = modes, settings=settings)    
+    
     
 
     def cylindrical_position(self, s, theta, phi):
-        return _cylindrical_position_interpolated(self.data, self.settings, s, theta, phi)
+        return _cylindrical_position_interpolated(self, s, theta, phi)
     
     def cartesian_position(self, s, theta, phi):
-        return _cartesian_position_interpolated(self.data, self.settings, s, theta, phi)
+        return _cartesian_position_interpolated(self, s, theta, phi)
     
     def normal(self, s, theta, phi):
-        return _normal_interpolated(self.data, self.settings, s, theta, phi)
+        return _normal_interpolated(self, s, theta, phi)
     
     def principal_curvatures(self, s, theta, phi):
-        return _principal_curvatures_interpolated(self.data, self.settings, s, theta, phi)
+        return _principal_curvatures_interpolated(self, s, theta, phi)
+    
+def make_2d_flux_surface(fs : FluxSurface) -> FluxSurface:
+    '''
+    Convert a FluxSurface with 1D data to a FluxSurface with 2D data by adding a dummy surface dimension.
+    This allows you to use the interpolation-based methods that require 2D data. Interpolation on one surface will 
+    just return the single surface.
+
+    Parameters:
+    -----------
+    fs : FluxSurface
+        The input FluxSurface with 1D data.
+    Returns:
+    --------
+    FluxSurface
+        The output FluxSurface with 2D data.
+    '''
+    return type(fs)(data = FluxSurfaceData(jnp.atleast_2d(fs.data.Rmnc), jnp.atleast_2d(fs.data.Zmns)),
+                modes = fs.modes,
+                settings = fs.settings)
     
     
 @jax.tree_util.register_dataclass
@@ -335,9 +375,9 @@ class ToroidalExtent:
 #                                                                           Positions
 # ===================================================================================================================================================================================
 @partial(jax.jit)
-def _cylindrical_position_direct(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, theta, phi):        
-    assert Rmnc.ndim == 1, "Rmnc must be a 1D array but is of shape {}".format(Rmnc.shape)
-    assert Rmnc.shape == Zmns.shape == mpol_vector.shape == ntor_vector.shape, "Rmnc, Zmns, mpol_vector, ntor_vector must have the same shape, but are {}, {}, {}, {}".format(Rmnc.shape, Zmns.shape, mpol_vector.shape, ntor_vector.shape)
+def _cylindrical_position_direct(flux_surface : FluxSurface, theta, phi):        
+    assert flux_surface.data.Rmnc.ndim == 1, "Rmnc must be a 1D array but is of shape {}".format(flux_surface.data.Rmnc.shape)
+    
     # This in essence computes:
     # R   = jnp.sum(Rmnc_interp[..., None] * jnp.cos(mpol_vector[..., None] * theta[None, ...] - ntor_vector[..., None] * phi[None, ...]), axis=-1)
     # However, although the above can be more efficient, it creates large intermediate arrays and is thus undesirable.
@@ -349,8 +389,8 @@ def _cylindrical_position_direct(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_ve
     # This function is valid for both s,theta,phi all scalars and broadcastable arrays. 
     def fourier_sum(vals, i):
         R, Z = vals
-        R = R + Rmnc[i] * jnp.cos(mpol_vector[i] * theta - ntor_vector[i] * phi)
-        Z = Z + Zmns[i] * jnp.sin(mpol_vector[i] * theta - ntor_vector[i] * phi)
+        R = R + flux_surface.data.Rmnc[i] * jnp.cos(flux_surface.modes.mpol_vector[i] * theta - flux_surface.modes.ntor_vector[i] * phi)
+        Z = Z + flux_surface.data.Zmns[i] * jnp.sin(flux_surface.modes.mpol_vector[i] * theta - flux_surface.modes.ntor_vector[i] * phi)
         return (R,Z), None
     
     # The fourier_sum function automatically broadcast arrays. However, we need to ensure that 
@@ -359,26 +399,26 @@ def _cylindrical_position_direct(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_ve
     # The phi_bc  is required to ensure the final array phi is stackable with R, Z.
     theta_bc, phi_bc = jnp.broadcast_arrays(theta, phi)
     
-    n_modes = Rmnc.shape[0]
+    n_modes = flux_surface.data.Rmnc.shape[0]
     R,Z = jax.lax.scan(fourier_sum, (jnp.zeros_like(theta_bc), jnp.zeros_like(theta_bc)), jnp.arange(n_modes))[0]    
     return jnp.stack([R, Z, phi_bc],axis=-1)
 
 @partial(jax.jit)
-def _cartesian_position_direct(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, theta, phi):
-    RZphi = _cylindrical_position_direct(Rmnc, Zmns, mpol_vector, ntor_vector, theta, phi)
+def _cartesian_position_direct(flux_surface : FluxSurface, theta, phi):
+    RZphi = _cylindrical_position_direct(flux_surface, theta, phi)
     return _cylindrical_to_cartesian(RZphi)
 
-_dx_dtheta_direct = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_direct, argnums=4), excluded=(0,1,2,3), signature='(),()->(3)'))
+_dx_dtheta_direct = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_direct, argnums=1), excluded=(0,), signature='(),()->(3)'))
 
 @partial(jax.jit)
-def _arc_length_theta_direct(Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol_vector : jnp.ndarray, ntor_vector : jnp.ndarray, theta, phi):
-    dx_dtheta = _dx_dtheta_direct(Rmnc, Zmns, mpol_vector, ntor_vector, theta, phi)
+def _arc_length_theta_direct(flux_surface : FluxSurface, theta, phi):
+    dx_dtheta = _dx_dtheta_direct(flux_surface, theta, phi)
     dx_dtheta_norm = jnp.linalg.norm(dx_dtheta, axis=-1)
     return dx_dtheta_norm
 
-@partial(jax.jit)
-def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxSurfaceSettings,  s,  theta, phi):
-    
+@eqx.filter_jit
+def _cylindrical_position_interpolated(flux_surface : FluxSurface,  s,  theta, phi):
+    assert flux_surface.data.Rmnc.ndim == 2, "Data must be a 2D array but is of shape {} [Did you use a FluxSurface with only 1D data? Check out make_2d_flux_surface.]".format(flux_surface.data.Rmnc.shape)
     
     # This in essence computes:
     # R   = jnp.sum(Rmnc_interp[..., None] * jnp.cos(mpol_vector[..., None] * theta[None, ...] - ntor_vector[..., None] * phi[None, ...]), axis=-1)
@@ -391,8 +431,8 @@ def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxS
     # This function is valid for both s,theta,phi all scalars and broadcastable arrays. 
     def fourier_sum(vals, i):
         R, Z = vals
-        R = R + interpolate_array(data.Rmnc[..., i], s) * jnp.cos(data.mpol_vector[i] * theta - data.ntor_vector[i] * phi)
-        Z = Z + interpolate_array(data.Zmns[..., i], s) * jnp.sin(data.mpol_vector[i] * theta - data.ntor_vector[i] * phi)
+        R = R + interpolate_array(flux_surface.data.Rmnc[..., i], s) * jnp.cos(flux_surface.modes.mpol_vector[i] * theta - flux_surface.modes.ntor_vector[i] * phi)
+        Z = Z + interpolate_array(flux_surface.data.Zmns[..., i], s) * jnp.sin(flux_surface.modes.mpol_vector[i] * theta - flux_surface.modes.ntor_vector[i] * phi)
         return (R,Z), None
     
     # The fourier_sum function automatically broadcast arrays. However, we need to ensure that 
@@ -401,23 +441,23 @@ def _cylindrical_position_interpolated(data : FluxSurfaceData, settings  : FluxS
     # The phi_bc  is required to ensure the final array phi is stackable with R, Z.
     s_bc, theta_bc, phi_bc = jnp.broadcast_arrays(s, theta, phi)
     
-    n_modes = data.Rmnc.shape[1]
+    n_modes = flux_surface.data.Rmnc.shape[1]
     
     R,Z = jax.lax.scan(fourier_sum, (jnp.zeros_like(theta_bc), jnp.zeros_like(theta_bc)), jnp.arange(n_modes))[0]
     
     return jnp.stack([R, Z, phi_bc],axis=-1)
     
 
-@partial(jax.jit)
-def _cartesian_position_interpolated(data : FluxSurfaceData, settings : FluxSurfaceSettings, s, theta, phi):
-    RZphi = _cylindrical_position_interpolated(data, settings, s, theta, phi)
+@eqx.filter_jit
+def _cartesian_position_interpolated(flux_surface : FluxSurface, s, theta, phi):
+    RZphi = _cylindrical_position_interpolated(flux_surface, s, theta, phi)
     return _cylindrical_to_cartesian(RZphi)
 
-_dx_dtheta = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_interpolated, argnums=3), excluded=(0,1), signature='(),(),()->(3)'))
+_dx_dtheta = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_interpolated, argnums=2), excluded=(0,), signature='(),(),()->(3)'))
 
-@partial(jax.jit)
-def _arc_length_theta(data : FluxSurfaceData, settings : FluxSurfaceSettings, s, theta, phi):
-    dx_dtheta = _dx_dtheta(data, settings, s, theta, phi)
+@eqx.filter_jit
+def _arc_length_theta(flux_surface : FluxSurface, s, theta, phi):
+    dx_dtheta = _dx_dtheta(flux_surface, s, theta, phi)
     dx_dtheta_norm = jnp.linalg.norm(dx_dtheta, axis=-1)
     return dx_dtheta_norm
 # ===================================================================================================================================================================================
@@ -428,35 +468,35 @@ def _arc_length_theta(data : FluxSurfaceData, settings : FluxSurfaceSettings, s,
 # this function requires scalars to work since it needs to return a (3,2) array
 # vmapping works, but loses the flexibility of either of the inputs being arrays, scalars or multidimensional arrays
 # furthermore, the jacobians are stacked to ensure jnp.vectorize can be used (it does not support multiple outputs like given by jacfwd)
-_cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cartesian_position_interpolated, argnums=(3,4)), excluded=(0,1), signature='(),(),()->(3,2)'))
+_cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cartesian_position_interpolated, argnums=(2,3)), excluded=(0,), signature='(),(),()->(3,2)'))
 
-@partial(jax.jit)
-def _dx_dphi_cross_dx_dtheta(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
-    dX_dtheta_and_dX_dphi = _cartesian_position_interpolated_grad(data, settings, s, theta, phi)
+@eqx.filter_jit
+def _dx_dphi_cross_dx_dtheta(flux_surface : FluxSurface, s, theta, phi):
+    dX_dtheta_and_dX_dphi = _cartesian_position_interpolated_grad(flux_surface, s, theta, phi)
     # We use dr/dphi x dr/dtheta 
     # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
     # This is accomplised by using the dphi_x_dtheta member. 
     n = jnp.cross(dX_dtheta_and_dX_dphi[..., 1], dX_dtheta_and_dX_dphi[..., 0])    
     return n
 
-@partial(jax.jit)
-def _normal_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):    
+@eqx.filter_jit
+def _normal_interpolated(flux_surface : FluxSurface, s, theta, phi):    
     # We use dr/dphi x dr/dtheta 
     # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
     # This is accomplised by using the dphi_x_dtheta member. 
-    n = _dx_dphi_cross_dx_dtheta(data, settings, s, theta, phi)
+    n = _dx_dphi_cross_dx_dtheta(flux_surface, s, theta, phi)
     n = n / jnp.linalg.norm(n, axis=-1, keepdims=True)
     return n
 
 # ===================================================================================================================================================================================
 #                                                                           Principal curvatures
 # ===================================================================================================================================================================================
-_cartesian_position_interpolated_grad_grad = jax.jit(jnp.vectorize(stack_jacfwd(stack_jacfwd(_cartesian_position_interpolated, argnums=(3,4)), argnums = (3,4)), excluded=(0,1), signature='(),(),()->(3,2,2)'))
+_cartesian_position_interpolated_grad_grad = jax.jit(jnp.vectorize(stack_jacfwd(stack_jacfwd(_cartesian_position_interpolated, argnums=(2,3)), argnums = (2,3)), excluded=(0,), signature='(),(),()->(3,2,2)'))
 
-@partial(jax.jit)
-def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxSurfaceSettings, s, theta, phi):
-    dX_dtheta_and_dX_dphi                        = _cartesian_position_interpolated_grad(data, settings, s, theta, phi)
-    d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2 = _cartesian_position_interpolated_grad_grad(data, settings, s, theta, phi)
+@eqx.filter_jit
+def _principal_curvatures_interpolated(flux_surface : FluxSurface, s, theta, phi):
+    dX_dtheta_and_dX_dphi                        = _cartesian_position_interpolated_grad(flux_surface, s, theta, phi)
+    d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2 = _cartesian_position_interpolated_grad_grad(flux_surface, s, theta, phi)
 
     # dx_dtheta_and_dX_dphi has shape (..., 3, 2), last index 0 is d/dtheta, last index 1 is d/dphi
     # d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2 has shape (..., 3, 2, 2) # 0,0 is d2/dtheta2, 0,1 and 1,0 is d2/dthetadphi, 1,1 is d2/dphi2
@@ -487,8 +527,8 @@ def _principal_curvatures_interpolated(data : FluxSurfaceData,  settings : FluxS
 #                                                                           Volume and Surface
 # ===================================================================================================================================================================================
 
-@partial(jax.jit, static_argnums=(1))
-def _volume_from_fourier(data : FluxSurfaceData, settings : FluxSurfaceSettings, s : float):
+@eqx.filter_jit
+def _volume_from_fourier(flux_surface : FluxSurface, s : float):
     ''' 
     Compute the volume enclosed by the flux surface at s using a Fourier representation.
 
@@ -501,10 +541,8 @@ def _volume_from_fourier(data : FluxSurfaceData, settings : FluxSurfaceSettings,
 
     Parameters:
     -----------
-    data : FluxSurfaceData
-        The flux surface data containing Fourier coefficients.
-    settings : FluxSurfaceSettings
-        The flux surface settings.
+    flux_surface : FluxSurface
+        The flux surface object containing Fourier coefficients and settings.
     s : float
         The normalized flux surface label (0 <= s <= 1).
     Returns:
@@ -520,28 +558,28 @@ def _volume_from_fourier(data : FluxSurfaceData, settings : FluxSurfaceSettings,
     # Nyquist -> 6 times the mode number
     nyquist_sampling = 6
 
-    n_theta = settings.mpol * nyquist_sampling +1
-    n_phi   = settings.ntor *  nyquist_sampling  +1
+    n_theta = flux_surface.settings.mpol * nyquist_sampling +1
+    n_phi   = flux_surface.settings.ntor *  nyquist_sampling  +1
     
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    phi   = jnp.linspace(0, 2 * jnp.pi / settings.nfp, n_phi, endpoint=False)
+    phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.settings.nfp, n_phi, endpoint=False)
     
     dtheta = 2 * jnp.pi / n_theta
-    dphi   = 2 * jnp.pi / settings.nfp  /  n_phi 
+    dphi   = 2 * jnp.pi / flux_surface.settings.nfp  /  n_phi 
 
     tt, pp = jnp.meshgrid(theta, phi, indexing='ij')
     
-    surface_normals      = _dx_dphi_cross_dx_dtheta(data, settings, s, tt, pp)
+    surface_normals      = _dx_dphi_cross_dx_dtheta(flux_surface, s, tt, pp)
 
-    r                     = _cartesian_position_interpolated(data, settings, s, tt, pp)    
+    r                     = _cartesian_position_interpolated(flux_surface, s, tt, pp)    
     f_ij = jnp.einsum('...i,...i->...', r, surface_normals)
 
-    volume = jnp.sum(f_ij) * dtheta * dphi / 3.0 * settings.nfp 
+    volume = jnp.sum(f_ij) * dtheta * dphi / 3.0 * flux_surface.settings.nfp 
 
     return volume
 
-@partial(jax.jit, static_argnums=(1))
-def _volume_from_fourier_half_mod(data : FluxSurfaceData, settings : FluxSurfaceSettings, s : float):
+@eqx.filter_jit
+def _volume_from_fourier_half_mod(flux_surface : FluxSurface, s : float):
     ''' 
     Compute the volume enclosed by the flux surface at s using a Fourier representation.
 
@@ -554,10 +592,8 @@ def _volume_from_fourier_half_mod(data : FluxSurfaceData, settings : FluxSurface
 
     Parameters:
     -----------
-    data : FluxSurfaceData
-        The flux surface data containing Fourier coefficients.
-    settings : FluxSurfaceSettings
-        The flux surface settings.
+    flux_surface : FluxSurface
+        The flux surface object containing Fourier coefficients and settings.
     s : float
         The normalized flux surface label (0 <= s <= 1).
     Returns:
@@ -567,10 +603,10 @@ def _volume_from_fourier_half_mod(data : FluxSurfaceData, settings : FluxSurface
     '''
 
     nyquist_sampling = 6
-    n_theta = settings.mpol * nyquist_sampling + 1
+    n_theta = flux_surface.settings.mpol * nyquist_sampling + 1
 
     # We add one to always satisfy nyquist.
-    n_phi   = int((settings.ntor *  nyquist_sampling + 1) / 2) 
+    n_phi   = int((flux_surface.settings.ntor *  nyquist_sampling + 1) / 2) 
     
     # Now, given that we want to sample half of a module, we have two choices depending on the full module n_phi:
 
@@ -589,22 +625,22 @@ def _volume_from_fourier_half_mod(data : FluxSurfaceData, settings : FluxSurface
     # We chose the latter option since it is one less computation. Numerically, they are exactly the same.
 
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    phi   = jnp.linspace(0, 2 * jnp.pi / settings.nfp , 2* n_phi, endpoint=True)[:n_phi]
+    phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.settings.nfp , 2* n_phi, endpoint=True)[:n_phi]
     
     dtheta = 2 * jnp.pi / n_theta
     dphi   = phi[1]- phi[0]
         
     tt, pp = jnp.meshgrid(theta, phi, indexing='ij')
     
-    surface_normals        = _dx_dphi_cross_dx_dtheta(data, settings, s, tt, pp)
+    surface_normals        = _dx_dphi_cross_dx_dtheta(flux_surface, s, tt, pp)
 
-    r                      = _cartesian_position_interpolated(data, settings, s, tt, pp)    
+    r                      = _cartesian_position_interpolated(flux_surface, s, tt, pp)    
     f_ij                   = jnp.einsum('...i,...i->...', r, surface_normals)
 
     base_half_mod          = jnp.sum(f_ij) * dtheta * dphi / 3.0 
     boundary_correction_b1 = jnp.sum(f_ij[:,0]) * dtheta * dphi / 3.0 
 
-    return (base_half_mod * 2.0 -  boundary_correction_b1) * settings.nfp
+    return (base_half_mod * 2.0 -  boundary_correction_b1) * flux_surface.settings.nfp
     
 
 

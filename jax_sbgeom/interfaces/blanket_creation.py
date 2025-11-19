@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from dataclasses import dataclass
 from jax_sbgeom.flux_surfaces import ToroidalExtent, mesh_tetrahedra, FluxSurface, FluxSurfaceFourierExtended
 from jax_sbgeom.flux_surfaces.flux_surface_meshing import _mesh_tetrahedra
-from jax_sbgeom.flux_surfaces.convert_to_vmec import create_fourier_surface_extension_interp_equal_arclength, _create_fluxsurface_from_rmnc_zmns
+
 from functools import cached_property
 # This provides a interface for creating blanket geometries around flux surfaces
 

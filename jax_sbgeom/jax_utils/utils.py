@@ -329,7 +329,11 @@ def _resample_uniform_periodic_pchip(non_uniform_values : jnp.ndarray, n_points_
 # ===================================================================================================================================================================================
 #                                                                           Pyvista mesh conversion
 # ===================================================================================================================================================================================
-def _mesh_to_pyvista_mesh(pts, conn):    
+def _mesh_to_pyvista_mesh(pts, conn = None):    
+    if type(pts) is tuple:  
+        conn = pts[1]
+        pts = pts[0]
+        
     import pyvista as pv
     if conn.shape[-1] == 3:
         

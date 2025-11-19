@@ -316,8 +316,8 @@ def _check_volumes(fs_jax, fs_sbgeom, atol = 1e-13):
 
     s = 0.5357
 
-    vol_jax  = jsb.flux_surfaces.flux_surfaces_base._volume_from_fourier_half_mod(fs_jax.data, fs_jax.settings, s)
-    vol_jax2 = jsb.flux_surfaces.flux_surfaces_base._volume_from_fourier(fs_jax.data, fs_jax.settings, s)
+    vol_jax  = jsb.flux_surfaces.flux_surfaces_base._volume_from_fourier_half_mod(fs_jax, s)
+    vol_jax2 = jsb.flux_surfaces.flux_surfaces_base._volume_from_fourier(fs_jax, s)
 
     onp.testing.assert_allclose(vol_jax, vol_jax2, atol=atol)
     
@@ -403,9 +403,10 @@ def test_RZ_to_VMEC_lcfs(_get_flux_surfaces):
 
     positions_jax = fs_jax.cylindrical_position(1.0, theta_mg, phi_mg)
 
-    Rmnc, Zmns             = jsb.flux_surfaces.convert_to_vmec._rz_to_vmec_representation(positions_jax[..., 0], positions_jax[..., 1])
-    onp.testing.assert_allclose(Rmnc, fs_jax.data.Rmnc[-1,:], rtol=1e-12, atol=1e-12)
-    onp.testing.assert_allclose(Zmns, fs_jax.data.Zmns[-1,:], rtol=1e-12, atol=1e-12)
+    RZ            = jsb.flux_surfaces.convert_to_vmec._rz_to_vmec_representation(positions_jax[..., 0], positions_jax[..., 1])
+
+    onp.testing.assert_allclose(RZ.Rmnc, fs_jax.data.Rmnc[-1,:], rtol=1e-12, atol=1e-12)
+    onp.testing.assert_allclose(RZ.Zmns, fs_jax.data.Zmns[-1,:], rtol=1e-12, atol=1e-12)
 
 
 def test_extension_VMEC(_get_flux_surfaces):
@@ -416,15 +417,19 @@ def test_extension_VMEC(_get_flux_surfaces):
     ntor_new = fs_jax.settings.ntor + 13
     sampling_grid  = _sampling_grid(fs_jax)
 
-    Rmnc_Zmns_new = jsb.flux_surfaces.convert_to_vmec._convert_to_different_mpol_ntor(jnp.stack([fs_jax.data.Rmnc, fs_jax.data.Zmns], axis=0), mpol_new, ntor_new, fs_jax.settings.mpol, fs_jax.settings.ntor)
-
-    new_settings = jsb.flux_surfaces.flux_surfaces_base.FluxSurfaceSettings(
+    settings_new = jsb.flux_surfaces.flux_surfaces_base.FluxSurfaceSettings(
         mpol = mpol_new,
         ntor = ntor_new,
         nfp  = fs_jax.settings.nfp,        
     )
-    fs_new = jsb.flux_surfaces.FluxSurface(jsb.flux_surfaces.flux_surfaces_base.FluxSurfaceData.from_rmnc_zmns_settings(Rmnc_Zmns_new[0], Rmnc_Zmns_new[1], new_settings                                                       
-                                                          ), settings=new_settings)
+
+    fs_new = jsb.flux_surfaces.convert_to_vmec.convert_to_different_settings(fs_jax, settings_new)
+
     onp.testing.assert_allclose(fs_new.cartesian_position(*sampling_grid), fs_jax.cartesian_position(*sampling_grid), rtol=1e-12, atol=1e-12)
+
+
+    
+    fs_new2 = fs_new = jsb.flux_surfaces.convert_to_vmec.convert_to_different_settings(fs_new, fs_jax.settings)
+    onp.testing.assert_allclose(fs_new2.cartesian_position(*sampling_grid), fs_jax.cartesian_position(*sampling_grid), rtol=1e-12, atol=1e-12)
 
     
