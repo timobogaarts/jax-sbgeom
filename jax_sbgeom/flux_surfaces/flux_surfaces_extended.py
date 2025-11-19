@@ -87,8 +87,8 @@ class FluxSurfaceFourierExtended(FluxSurface):
     def cartesian_position(self, s, theta, phi):
         return _fourier_extended_cartesian_position(self.data, self.settings, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
     
-    # def cylindrical_position(self, s, theta, phi):
-    #     return _fourier_extended_cylindrical_position(self.data, self.settings, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
+    def cylindrical_position(self, s, theta, phi):
+        return _fourier_extended_cylindrical_position(self.data, self.settings, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
     
     # def normal(self, s, theta, phi):
     #     return _fourier_extended_normal(self.data, self.settings, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)

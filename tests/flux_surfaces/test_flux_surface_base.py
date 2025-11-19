@@ -416,7 +416,7 @@ def test_extension_VMEC(_get_flux_surfaces):
     ntor_new = fs_jax.settings.ntor + 13
     sampling_grid  = _sampling_grid(fs_jax)
 
-    Rmnc_Zmns_new = jsb.flux_surfaces.convert_to_vmec._convert_to_different_ntor_mpol(jnp.stack([fs_jax.data.Rmnc, fs_jax.data.Zmns], axis=0), mpol_new, ntor_new, fs_jax.settings.mpol, fs_jax.settings.ntor)
+    Rmnc_Zmns_new = jsb.flux_surfaces.convert_to_vmec._convert_to_different_mpol_ntor(jnp.stack([fs_jax.data.Rmnc, fs_jax.data.Zmns], axis=0), mpol_new, ntor_new, fs_jax.settings.mpol, fs_jax.settings.ntor)
 
     new_settings = jsb.flux_surfaces.flux_surfaces_base.FluxSurfaceSettings(
         mpol = mpol_new,

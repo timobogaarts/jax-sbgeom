@@ -24,9 +24,6 @@ class LayeredDiscreteBlanket(LayeredBlanket):
     n_phi              : int
     resolution_layers  : tuple
     toroidal_extent    : ToroidalExtent
-
-    def layer_slice(self, layer_index : int):
-        return _compute_layer_slice(self.n_discrete_layers, self.n_theta, self.n_phi, layer_index)
     
     def __post_init__(self) :
         if len(self.resolution_layers) != self.n_layers:
@@ -35,6 +32,10 @@ class LayeredDiscreteBlanket(LayeredBlanket):
     @property 
     def n_discrete_layers(self):
         return jnp.sum(jnp.array(self.resolution_layers))
+    
+    def layer_slice(self, layer_index : int):
+        return _compute_layer_slice(self.n_discrete_layers, self.n_theta, self.n_phi, layer_index)
+    
 
 def _compute_layer_slice(n_discrete_layers : int, n_theta : int, n_phi : int, layer_i : int):
     if layer_i < 0:
@@ -54,6 +55,10 @@ def _compute_layer_slice(n_discrete_layers : int, n_theta : int, n_phi : int, la
 def mesh_tetrahedral_blanket(flux_surface : FluxSurface, blanket : LayeredDiscreteBlanket, s_power_sampling : int):
     '''
     Create a blanket mesh using structured tetrahedral meshing.
+
+    Until s=1, it is meshed with a power-law spacing. This is done with the number of points specified in the first entry of resolution_layers (i.e., resolution_layers[0] - 1 layers).
+    Then, the first external layer is placed immediately afterwards. Therefore, the total number of element layers until the first external layer is resolution_layers[0].
+    The number of elements in the first external layer is resolution_layers[1], and so on.
 
     Parameters
     ----------
