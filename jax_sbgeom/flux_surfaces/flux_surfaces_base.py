@@ -168,8 +168,7 @@ reverse_theta_total  = jax.jit(jax.vmap(_reverse_theta_single, in_axes=(None, No
 class FluxSurfaceSettings:
     mpol : int     # maximum poloidal mode number [inclusive]
     ntor : int     # maximum toroidal mode number [inclusive]
-    nfp  : int     # number of field periods
-    nsurf : int    # number of flux surfaces
+    nfp  : int     # number of field periods    
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -202,8 +201,7 @@ class FluxSurfaceData:
             Rmnc_mod = Rmnc 
             Zmns_mod = Zmns
 
-        assert(Rmnc.shape == Zmns.shape)
-        assert(Rmnc.shape[0] == settings.nsurf)
+        assert(Rmnc.shape == Zmns.shape)        
         assert(Rmnc.shape[1] == len(mpol_vector))
         return cls(Rmnc=Rmnc_mod, Zmns=Zmns_mod, mpol_vector=mpol_vector, ntor_vector=ntor_vector)
 
@@ -234,13 +232,11 @@ def _data_settings_from_hdf5(filename : str, make_normals_point_outwards : bool 
 
         assert( jnp.all( _create_mpol_vector(mpol, ntor) == jnp.array(f['xm'])))      # sanity check
         assert( jnp.all( _create_ntor_vector(mpol, ntor, nfp) == jnp.array(f['xn']))) # sanity check
-        
-        nsurf = int(Zmns.shape[0])
+                
         settings = FluxSurfaceSettings(
             mpol=mpol,
             ntor=ntor,
-            nfp=nfp,                
-            nsurf=nsurf
+            nfp=nfp,                            
         )
 
         data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings)
@@ -277,13 +273,11 @@ class FluxSurface:
         return cls(data = flux_surface_base.data, settings = flux_surface_base.settings)
     
     @classmethod
-    def from_rmnc_zmns_mpol_ntor(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol : int, ntor : int, nfp : int, make_normals_point_outwards : bool = True):
-        nsurf = Rmnc.shape[0]
+    def from_rmnc_zmns_mpol_ntor(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, mpol : int, ntor : int, nfp : int, make_normals_point_outwards : bool = True):        
         settings = FluxSurfaceSettings(
             mpol=mpol,
             ntor=ntor,
-            nfp=nfp,                
-            nsurf=nsurf
+            nfp=nfp,                            
         )
         data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings, make_normals_point_outwards)
         return cls(data=data, settings=settings)

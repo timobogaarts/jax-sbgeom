@@ -421,8 +421,7 @@ def test_extension_VMEC(_get_flux_surfaces):
     new_settings = jsb.flux_surfaces.flux_surfaces_base.FluxSurfaceSettings(
         mpol = mpol_new,
         ntor = ntor_new,
-        nfp  = fs_jax.settings.nfp,
-        nsurf= fs_jax.settings.nsurf
+        nfp  = fs_jax.settings.nfp,        
     )
     fs_new = jsb.flux_surfaces.FluxSurface(jsb.flux_surfaces.flux_surfaces_base.FluxSurfaceData.from_rmnc_zmns_settings(Rmnc_Zmns_new[0], Rmnc_Zmns_new[1], new_settings                                                       
                                                           ), settings=new_settings)

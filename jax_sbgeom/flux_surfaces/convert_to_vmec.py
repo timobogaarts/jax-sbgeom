@@ -105,7 +105,7 @@ def _convert_cos_sin_to_vmec(xckl, xcmkl, xskl, xsmkl, cosine : bool):
 
 
 @jax.jit
-def _rz_to_vmec_representation(R_grid, Z_grid):
+def _rz_to_vmec_representation(R_grid : jnp.ndarray, Z_grid : jnp.ndarray):
     assert R_grid.shape == Z_grid.shape, "R and Z grids must have the same shape but got {} and {}".format(R_grid.shape, Z_grid.shape)
     R_dft = _dft_forward(R_grid)
     Z_dft = _dft_forward(Z_grid)
@@ -341,6 +341,6 @@ def _create_fluxsurface_from_rmnc_zmns(rmnc : jnp.ndarray, zmns : jnp.ndarray, m
         Rmnc_ext = rmnc
         Zmns_ext = zmns
     
-    settings = FluxSurfaceSettings(mpol, ntor, nfp, Rmnc_ext.shape[0])
+    settings = FluxSurfaceSettings(mpol, ntor, nfp)
     fs_jax   = type(FluxSurfaceData.from_rmnc_zmns_settings(Rmnc_ext, Zmns_ext, settings), settings)
     return fs_jax
