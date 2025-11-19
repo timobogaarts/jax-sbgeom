@@ -5,7 +5,7 @@ import numpy as onp
 from dataclasses import dataclass
 from jax_sbgeom.jax_utils.utils import stack_jacfwd, interpolate_array
 from functools import partial
-
+@partial(jax.jit, static_argnums = (0,1))
 def _create_mpol_vector(mpol : int, ntor : int):    
     '''
     Create the poloidal mode number vector for VMEC representation.
@@ -26,7 +26,12 @@ def _create_mpol_vector(mpol : int, ntor : int):
     jnp.ndarray
         The poloidal mode number vector.
     '''
-    return jnp.array([0 for i in range(ntor + 1)] + sum([[i for j in range(2 * ntor + 1)]for i in range(1, mpol +1 )], []), dtype=int)
+    return jnp.concatenate([
+        jnp.zeros(ntor + 1, dtype=int),
+        jnp.repeat(jnp.arange(1, mpol + 1), 2 * ntor + 1)
+    ])
+
+@partial(jax.jit, static_argnums = (0,1))
 def _create_ntor_vector(mpol : int, ntor : int, symm : int):
     '''
     Create the toroidal mode number vector for VMEC representation.
@@ -48,8 +53,11 @@ def _create_ntor_vector(mpol : int, ntor : int, symm : int):
         The toroidal mode number vector.
 
     '''
-
-    return jnp.array(list(range(0, (ntor + 1) * symm , symm)) + sum([list(range(-ntor * symm, (ntor + 1) * symm, symm)) for i in range(mpol)], []), dtype=int)
+    return jnp.concatenate([
+        jnp.arange(ntor + 1),
+        jnp.tile(jnp.arange(-ntor, ntor + 1), mpol)
+    ]) * symm
+    
 
 
 def _cylindrical_to_cartesian(RZphi : jnp.ndarray):

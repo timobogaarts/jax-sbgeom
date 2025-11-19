@@ -7,6 +7,8 @@ from .flux_surfaces_extended import FluxSurfaceNormalExtended, FluxSurfaceNormal
 from jax_sbgeom.jax_utils.utils import bilinear_interp, _resample_uniform_periodic_pchip, _resample_uniform_periodic_linear
 from warnings import warn
 from typing import Type
+import equinox as eqx
+
 @jax.jit
 def _dft_forward(points : jnp.ndarray):
     '''
@@ -157,6 +159,13 @@ def mpol_ntor_from_ntheta_nphi(n_theta : int, n_phi : int):
     mpol = n_theta // 2
     ntor = n_phi   // 2
     return mpol, ntor
+
+def mpol_ntor_vector_from_grid_shape(grid_shape : tuple):
+    n_theta, n_phi = grid_shape
+    mpol, ntor     = mpol_ntor_from_ntheta_nphi(n_theta, n_phi)
+    mpol_vector    = _create_mpol_vector(mpol, ntor)
+    ntor_vector    = _create_ntor_vector(mpol, ntor, 1)  # symm not necessary here    
+    return mpol, ntor, mpol_vector, ntor_vector
 
 def create_fourier_representation(flux_surface : FluxSurface, s : jnp.ndarray, theta_grid : jnp.ndarray):
     # Static Checks
