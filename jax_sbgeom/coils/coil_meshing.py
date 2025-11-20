@@ -68,7 +68,15 @@ def _mesh_rectangular_finite_sized_coilset_connectivity(n_coils, n_samples : int
 
 def mesh_coilset_surface(coils : FiniteSizeCoilSet, n_s : int, width_radial : float, width_phi : float):
     '''
-    Mesh the surface of a coil
+    Mesh the surface of a coilset
+
+    The coils vertices are originally:
+    [n_coils, n_s, 4, 3] (4 lines per coil)
+    
+    The coils connectivity is originally:
+    [n_coils, n_s, 4, 2, 3] (4 lines per coil, 2 triangles per quad)
+    Both are reshaped to (-1,3) to facilate easier post processing.
+    
 
     Parameters
     ----------
@@ -76,10 +84,10 @@ def mesh_coilset_surface(coils : FiniteSizeCoilSet, n_s : int, width_radial : fl
         Coil to mesh
     n_s : int
         Number of samples along the coil
-    method : str
-        Method to use for meshing. Options are 'centroid' and 'rmf'
-    kwargs : dict
-        Additional arguments for the meshing method
+    width_radial : float
+        Radial width of the finite sized coil
+    width_phi : float
+        Toroidal width of the finite sized coil
     Returns
     -------
     jnp.ndarray
@@ -87,6 +95,6 @@ def mesh_coilset_surface(coils : FiniteSizeCoilSet, n_s : int, width_radial : fl
     jnp.ndarray
         Connectivity array of the meshed coil surface
     '''
-    finite_size_lines = coils.finite_size(jnp.linspace(0, 1.0, n_s, endpoint=False), width_radial, width_phi)        
+    finite_size_lines = coils.finite_size(jnp.linspace(0, 1.0, n_s, endpoint=False), width_radial, width_phi)            
     connectivity = _mesh_rectangular_finite_sized_coilset_connectivity(coils.n_coils, n_s, 4, True)
     return finite_size_lines.reshape(-1, 3), connectivity

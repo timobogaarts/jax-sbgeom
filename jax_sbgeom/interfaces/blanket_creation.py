@@ -36,6 +36,13 @@ class LayeredDiscreteBlanket(LayeredBlanket):
     def layer_slice(self, layer_index : int):
         return _compute_layer_slice(self.n_discrete_layers, self.n_theta, self.n_phi, layer_index)
     
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class DiscreteFiniteSizeCoilSet:
+    n_points_per_coil : int
+    toroidal_extent   : ToroidalExtent
+    width_R : float
+    width_phi : float     
 
 def _compute_layer_slice(n_discrete_layers : int, n_theta : int, n_phi : int, layer_i : int):
     if layer_i < 0:
@@ -51,6 +58,15 @@ def _compute_layer_slice(n_discrete_layers : int, n_theta : int, n_phi : int, la
         layer_blocks = slice(layer_wedge + (layer_i - 1) * layer_else + dedge, layer_wedge +  layer_i * layer_else - dedge)
     return layer_blocks
 
+def compute_spacing(blanket : LayeredDiscreteBlanket, s_power_sampling : int):
+    inner_blanket_spacing = jnp.linspace(0.0, 1.0, blanket.resolution_layers[0]) ** s_power_sampling
+    s_layers              = jnp.concatenate([inner_blanket_spacing, jnp.concatenate([jnp.linspace(2.0 + i, 3.0 + i, blanket.resolution_layers[i  + 1], endpoint=False) for i in range(blanket.n_layers - 1)], axis=0), jnp.array([1.0 + blanket.n_layers])])                 
+    return s_layers
+
+def compute_d_spacing(blanket  : LayeredDiscreteBlanket, s_power_sampling : int):
+    inner_blanket_spacing = jnp.linspace(0.0, 1.0, blanket.resolution_layers[0]) ** s_power_sampling    
+    d_layers              = jnp.concatenate([inner_blanket_spacing, jnp.concatenate([jnp.linspace(1.0 + blanket.d_layers[i], 1.0 + blanket.d_layers[i+1], blanket.resolution_layers[i  + 1], endpoint=False) for i in range(blanket.n_layers - 1)], axis=0), jnp.array([1.0 + blanket.d_layers[-1]])])                 
+    return d_layers
 
 def mesh_tetrahedral_blanket(flux_surface : FluxSurface, blanket : LayeredDiscreteBlanket, s_power_sampling : int):
     '''
