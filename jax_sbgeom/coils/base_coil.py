@@ -11,6 +11,9 @@ from typing import Type
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class Coil(ABC):
+    '''
+    Abstract base class for coils. All coil classes should inherit from this class and implement the abstract methods.
+    '''
     @abstractmethod 
     def position(self, s):     
         ...
@@ -32,7 +35,7 @@ class Coil(ABC):
         ...
         
 
-# Functional versions for vmapping
+# Functional versions for vmapping in coilsets
 def coil_position(coil: Coil, s):
     return coil.position(s)
 
@@ -56,6 +59,10 @@ def coil_reverse_parametrisation(coil: Coil):
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class FiniteSizeMethod(ABC):
+    '''
+    Abstract base class for finite size methods. All finite size method classes should inherit from this class and implement the abstract methods.
+
+    '''
 
     @classmethod    
     def setup_from_coil(cls, coil : Coil, *args):
@@ -171,6 +178,13 @@ def _frame_from_radial_vector(tangents, radial_vectors):
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class FiniteSizeCoil(Coil):
+    '''
+    Class representing a coil with finite size defined by a FiniteSizeMethod.
+
+    Internally, is a coil but also has a coil as member. The coil member is used to compute the position, tangent, centre and normal.
+    The FiniteSizeMethod member is used to compute the radial vector and finite size frame.
+
+    '''
     coil : Coil
     finite_size_method : FiniteSizeMethod
 
@@ -354,6 +368,9 @@ def _radial_vector_centroid_from_data(coil_centre, positions, tangents):
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class FrenetSerretFrame(FiniteSizeMethod):            
+    '''
+    Finite size method using Frenet-Serret frame.
+    '''
     def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
         return _compute_radial_vector_frenet_serret(coil, s)
  
@@ -545,8 +562,16 @@ def _angle_axis_to_matrix(axis, angle):
     """
     Convert an angle-axis representation to a 3x3 rotation matrix.
 
-    axis: shape (3,)
-    angle: scalar
+    Parameters:
+    ----------
+    axis : jnp.ndarray (3,)
+        The axis of rotation (should be a unit vector).
+    angle : float
+        The angle of rotation in radians.   
+    Returns:
+    -------
+    jnp.ndarray (3, 3)
+        The corresponding rotation matrix.
     """
     axis = axis / jnp.linalg.norm(axis)
     ux, uy, uz = axis
@@ -569,6 +594,18 @@ _angle_axis_to_matrix_vmap = jax.vmap(_angle_axis_to_matrix, in_axes=(0, 0))
 
 @jax.jit
 def _coil_rotation_positive(coil):
+    '''
+    Check whether the coil rotation is positive (increasing angle when looking at R-Z cross section)
+
+    Parameters:
+    ----------
+        coil: Coil
+            Coil object to check
+    Returns:
+    -------
+        bool
+            Whether the coil has positive rotation
+    '''
 
     s = jnp.linspace(0,1,30, endpoint=False)
     pos = coil.position(s) 
@@ -588,8 +625,11 @@ def ensure_coil_rotation(coil : Coil, positive_rotation : bool):
     Ensure that the coils in the coilset are ordered in the same rotation (positive is increasing angle when looking at R-Z cross section)
 
     Parameters:
-        coil (Coil) : Coil to check
-        positive_rotation (bool) : Whether the coil should have positive rotation
+    ----------
+        coil: Coil
+            Coil object to check
+        positive_rotation: bool
+            Whether the coil should have positive rotation (if False, negative rotation is enforced)
     Returns:
         Coil       : Coil with ensured rotation
     '''    

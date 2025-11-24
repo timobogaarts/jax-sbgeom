@@ -14,6 +14,10 @@ from .base_coil import _rmf_radial_vector_from_data
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class DiscreteCoil(Coil):
+    '''
+    Class representing a coil defined by discrete positions and a centre.
+    This centre is precomputed from the given positions. It does not feature in the computation of the coil positions; only the centre.
+    '''
     positions    : jnp.ndarray  # [..., 3] Cartesian positions of discrete coil points
     _centre_i    : jnp.ndarray  # Centre of the coil: is simply the mean of the positions. This could be a cached property, but this does not play well with JAX.
         
@@ -92,6 +96,9 @@ class DiscreteCoil(Coil):
         return jnp.full(s.shape + (3,), jnp.nan)
     
     def reverse_parametrisation(self):
+        '''
+        Reverse the parametrisation of the discrete coil. Reverses all points except the first (s=0 remains s=0).
+        '''
         return _discrete_coil_reverse_parametrisation(self)
         
     

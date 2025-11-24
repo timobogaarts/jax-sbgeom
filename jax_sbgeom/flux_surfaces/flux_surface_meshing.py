@@ -86,6 +86,26 @@ def _build_closed_strip(n_strip : int, offset_index_0 : int, offset_index_1 : in
 
 @partial(jax.jit, static_argnums = (0))
 def _build_closed_wedges(n_wedge : int, offset_index_0 : int, offset_index_1 : int, normals_orientation : bool, stride_1):
+    '''
+    This functions connects a wedge of triangles to a center point. Each wedge has n_wedge vertices, and the first vertex of the wedge is at offset_index_1.
+
+    Parameters
+    ----------
+    n_wedge : int
+        The number of vertices in the wedge.
+    offset_index_0 : int
+        The index of the center point.
+    offset_index_1 : int
+        The starting index of the wedge.
+    normals_orientation : bool
+        Whether the normals should face outwards (right-hand rule).
+    stride_1 : int
+        The stride between vertices in the wedge.
+    Returns
+    -------
+    triangles : jnp.ndarray
+        An array of shape (n_triangles, 3) containing the indices of the vertices for each triangle.        
+    '''
     u_i_block = jnp.arange(n_wedge)
     center     = jnp.zeros_like(u_i_block) + offset_index_0
     wedge_1    = u_i_block * stride_1 + offset_index_1
@@ -115,6 +135,27 @@ _build_closed_strips = jax.vmap(_build_closed_strip, in_axes=(None,0,0,None, Non
 
 @partial(jax.jit, static_argnums = (0,1,2,3))
 def _build_triangles_surface(n_theta : int, theta_blocks : int, n_phi : int, phi_blocks : int, normals_orientation : bool):
+    '''
+    Build the triangle connectivity for a surface mesh given the number of poloidal and toroidal points/blocks.
+
+    Parameters
+    ----------
+    n_theta : int
+        The number of poloidal points.
+    theta_blocks : int
+        The number of poloidal blocks.
+    n_phi : int
+        The number of toroidal points.
+    phi_blocks : int
+        The number of toroidal blocks.
+    normals_orientation : bool
+        Whether the normals should face outwards (right-hand rule).
+    Returns
+    -------
+    triangles : jnp.ndarray
+        An array of shape (n_triangles, 3) containing the indices of the vertices for each triangle.
+
+    '''
 
     # Points are ordered with phi first, then theta
     # Therefore, given a particular strip:

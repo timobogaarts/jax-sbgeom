@@ -1,25 +1,20 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
 import jax 
 import jax.numpy as jnp
-import numpy as onp
-from typing import Literal
-from jax_sbgeom.jax_utils.utils import interpolate_array_modulo_broadcasted
 from jax_sbgeom.flux_surfaces.flux_surface_meshing import _build_triangles_surface, _build_closed_strips
 from .base_coil import FiniteSizeCoil
 from functools import partial
 from .coilset import FiniteSizeCoilSet
 
 def _mesh_finite_sized_lines_connectivity(n_samples : int, n_lines_per_coil : int, normal_orientation : bool):
-    '''
-    Given a set of finite sized lines, mesh the surface of the coil
+    ''''
+    Connectivity of a surface spanned by some finite sized lines
+
+    Uses _build_triangles_surface to build the connectivity.
 
     Parameters
     ----------
     n_samples : int
         Number of samples along the coil
-    n_lines_per_coil : int
-        Number of finite sized lines per coil
     normal_orientation : bool
         Whether to orient the normals outwards (True) or inwards (False)
     Returns
@@ -31,12 +26,27 @@ def _mesh_finite_sized_lines_connectivity(n_samples : int, n_lines_per_coil : in
     return _build_triangles_surface(n_samples, n_samples, n_lines_per_coil, n_lines_per_coil, normal_orientation)
 
 def _mesh_rectangular_finite_sized_coils_connectivity(n_samples : int, normal_orientation : bool):
+    ''''
+    Connectivity of a surface spanned by 4 finite sized lines
+
+    Parameters
+    ----------
+    n_samples : int
+        Number of samples along the coil
+    normal_orientation : bool
+        Whether to orient the normals outwards (True) or inwards (False)
+    Returns
+    -------
+    jnp.ndarray
+        Connectivity array of the meshed coil surface
+
+    '''
     return _mesh_finite_sized_lines_connectivity(n_samples, 4, normal_orientation)
 
 @partial(jax.jit, static_argnums = 1)
 def mesh_coil_surface(coil : FiniteSizeCoil, n_s : int, width_radial : float, width_phi : float):
     '''
-    Mesh the surface of a coil
+    Mesh the surface of a coil using a defined number of samples and coil width.
 
     Parameters
     ----------
@@ -44,10 +54,10 @@ def mesh_coil_surface(coil : FiniteSizeCoil, n_s : int, width_radial : float, wi
         Coil to mesh
     n_s : int
         Number of samples along the coil
-    method : str
-        Method to use for meshing. Options are 'centroid' and 'rmf'
-    kwargs : dict
-        Additional arguments for the meshing method
+    width_radial : float
+        Radial width of the finite sized coil
+    width_phi : float
+        Toroidal width of the finite sized coil
     Returns
     -------
     jnp.ndarray
@@ -61,6 +71,26 @@ def mesh_coil_surface(coil : FiniteSizeCoil, n_s : int, width_radial : float, wi
 
 @partial(jax.jit, static_argnums = (0,1,2,3))
 def _mesh_rectangular_finite_sized_coilset_connectivity(n_coils, n_samples : int, n_lines_per_coil : int, normal_orientation : bool):
+    '''
+    Connectivity of a coilset surface spanned by some finite sized lines per coil
+    Includes an offset for each coil in the coilset to ensure a consistent coilset mesh
+
+    Assumes the vertices array has a shape 
+    [n_coils, n_samples, n_lines_per_coil, 3] but then flattened.
+
+    Parameters
+    ----------
+    n_coils : int
+        Number of coils in the coilset
+    n_samples : int
+        Number of samples along the coil
+    normal_orientation : bool
+        Whether to orient the normals outwards (True) or inwards (False)
+    Returns
+    -------
+    jnp.ndarray
+        Connectivity array of the meshed coil surface
+    '''
     connectivity_base = _mesh_finite_sized_lines_connectivity(n_samples, n_lines_per_coil, normal_orientation)
     offsets = jnp.arange(n_coils) * (n_samples * n_lines_per_coil)    
     return (connectivity_base[None, :, :] + offsets[:, None, None]).reshape(-1, connectivity_base.shape[1])

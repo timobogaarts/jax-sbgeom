@@ -278,7 +278,7 @@ class FluxSurface:
     modes    : FluxSurfaceModes
         Modes object containing the mode vectors mpol_vector and ntor_vector
     settings : FluxSurfaceSettings
-        Settings object containing parameters like mpol, ntor, nfp, and the mode vectors
+        Settings object containing parameters mpol, ntor, nfp
     '''
     data            : FluxSurfaceData     = None
     modes           : FluxSurfaceModes    = None
@@ -287,41 +287,175 @@ class FluxSurface:
 
     @classmethod
     def from_hdf5(cls, filename : str):        
+        '''
+        Load a FluxSurface from an VMEC-type HDF5 file.
+
+        Parameters:
+        ----------
+        filename : str
+            Path to the HDF5 file.
+        Returns:
+        -------
+        FluxSurface
+            The loaded FluxSurface object.
+        '''
         data, modes, settings = _data_modes_settings_from_hdf5(filename)
         return cls(data=data, modes = modes, settings=settings)
     
     @classmethod
     def from_flux_surface(cls, flux_surface_base : "FluxSurface"):
+        '''
+        Create a FluxSurface from another FluxSurface (copy constructor).
+        Can be used to convert between subclasses of FluxSurface.
+
+        Parameters:
+        -----------
+        flux_surface_base : FluxSurface
+            The input FluxSurface to copy from.
+        Returns:
+        --------
+        FluxSurface
+            The copied FluxSurface.
+        '''
         return cls(data = flux_surface_base.data, modes = flux_surface_base.modes, settings = flux_surface_base.settings)
     
     @classmethod
     def from_rmnc_zmns_settings(cls, Rmnc : jnp.ndarray, Zmns : jnp.ndarray, settings : FluxSurfaceSettings, make_normals_point_outwards : bool = True):                
+        '''
+        Create a FluxSurface from Fourier coefficients and settings. Optionally, modify the coefficients such that normals point outwards (default=True)
+
+        Parameters:
+        -----------
+        Rmnc : jnp.ndarray
+            Array of radial Fourier coefficients. Shape (nsurf, nmodes)
+        Zmns : jnp.ndarray
+            Array of vertical Fourier coefficients. Shape (nsurf, nmodes)
+        settings : FluxSurfaceSettings
+            Settings object containing parameters mpol, ntor, nfp   
+        make_normals_point_outwards : bool
+            Whether to modify the Fourier coefficients such that normals point outwards. Default is True.
+        Returns:
+        --------
+        FluxSurface
+            The created FluxSurface.
+        '''
         data = FluxSurfaceData.from_rmnc_zmns_settings(Rmnc, Zmns, settings, make_normals_point_outwards)
         modes = FluxSurfaceModes.from_settings(settings)
         return cls(data=data, modes = modes, settings=settings)
     
     @classmethod 
     def from_data_settings(cls, data : FluxSurfaceData, settings : FluxSurfaceSettings):        
+        '''
+        Create a FluxSurface from FluxSurfaceData and FluxSurfaceSettings.
+
+        Parameters:
+        -----------
+        data : FluxSurfaceData
+            Data object containing the Fourier coefficients Rmnc and Zmns
+        settings : FluxSurfaceSettings
+            Settings object containing parameters mpol, ntor, nfp   
+        Returns:
+        --------
+        FluxSurface
+            The created FluxSurface.
+        '''
         modes = FluxSurfaceModes.from_settings(settings)        
         return cls(data=data, modes = modes, settings=settings)    
     @classmethod 
     def from_data_settings_full(cls, data : FluxSurfaceData, settings : FluxSurfaceSettings):        
+        '''
+        Create a FluxSurface from FluxSurfaceData and FluxSurfaceSettings. In this function, the data is ensured to be 2D. This is 
+        required for some functions that interpolate between the different surfaces.
+
+        Parameters:
+        -----------
+        data : FluxSurfaceData
+            Data object containing the Fourier coefficients Rmnc and Zmns
+        settings : FluxSurfaceSettings
+            Settings object containing parameters mpol, ntor, nfp   
+        Returns:
+        --------
+        FluxSurface
+            The created FluxSurface.
+        '''
         data = FluxSurfaceData(Rmnc = jnp.atleast_2d(data.Rmnc), Zmns = jnp.atleast_2d(data.Zmns))
         modes = FluxSurfaceModes.from_settings(settings)        
-        return cls(data=data, modes = modes, settings=settings)    
-    
-    
+        return cls(data=data, modes = modes, settings=settings)        
 
     def cylindrical_position(self, s, theta, phi):
+        '''
+        Cylindrical position on the flux surface as a function of (s, theta, phi)
+
+        Parameters:
+        -----------
+        s : jnp.ndarray
+            Surface index or normalized flux label
+        theta : jnp.ndarray
+            Poloidal angle(s)
+        phi : jnp.ndarray
+            Toroidal angle(s)
+        Returns:
+        --------
+        jnp.ndarray
+            Cylindrical position(s) on the flux surface [R, Z, phi]
+        '''
         return _cylindrical_position_interpolated(self, s, theta, phi)
     
     def cartesian_position(self, s, theta, phi):
+        '''
+        Cartesian position on the flux surface as a function of (s, theta, phi)
+
+        Parameters:
+        -----------
+        s : jnp.ndarray
+            Surface index or normalized flux label
+        theta : jnp.ndarray
+            Poloidal angle(s)
+        phi : jnp.ndarray
+            Toroidal angle(s)
+        Returns:
+        --------
+        jnp.ndarray
+            Cartesian position(s) on the flux surface [x, y, z]
+        '''
         return _cartesian_position_interpolated(self, s, theta, phi)
     
     def normal(self, s, theta, phi):
+        '''
+        Normal vector on the flux surface as a function of (s, theta, phi)
+
+        Parameters:
+        -----------
+        s : jnp.ndarray
+            Surface index or normalized flux label
+        theta : jnp.ndarray
+            Poloidal angle(s)
+        phi : jnp.ndarray
+            Toroidal angle(s)
+        Returns:
+        --------
+        jnp.ndarray
+            Normal vector(s) on the flux surface
+        '''
         return _normal_interpolated(self, s, theta, phi)
     
     def principal_curvatures(self, s, theta, phi):
+        '''
+        Principal curvatures on the flux surface as a function of (s, theta, phi)
+
+        Parameters:
+        -----------
+        s : jnp.ndarray
+            Surface index or normalized flux label
+        theta : jnp.ndarray
+            Poloidal angle(s)   
+        phi : jnp.ndarray
+            Toroidal angle(s)
+        Returns:
+        --------
+        jnp.ndarray
+            Principal curvatures(s) on the flux surface
+        '''
         return _principal_curvatures_interpolated(self, s, theta, phi)
     
 def make_2d_flux_surface(fs : FluxSurface) -> FluxSurface:
@@ -347,22 +481,76 @@ def make_2d_flux_surface(fs : FluxSurface) -> FluxSurface:
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class ToroidalExtent:
+    '''
+    Class representing a toroidal extent in phi.
+
+    Attributes:
+    ----------- 
+    start : float
+        Starting toroidal angle (in radians)
+    end   : float
+        Ending toroidal angle (in radians)
+    '''
     start : float
     end   : float
 
     @classmethod
     def half_module(self, flux_surface : FluxSurface, dphi = 0.0):
+        '''
+        Create a ToroidalExtent representing half a field period.
+
+        Parameters:
+        ----------- 
+        flux_surface : FluxSurface
+            The flux surface for which to create the toroidal extent.
+        dphi : float
+            An optional offset to add to both the start and end angles.
+        Returns:
+        --------
+        ToroidalExtent
+            The created ToroidalExtent.
+        '''
         return self(dphi, 2 * jnp.pi / flux_surface.settings.nfp / 2.0 + dphi)
     
     @classmethod
     def full_module(self, flux_surface : FluxSurface, dphi = 0.0):
+        '''
+        Create a ToroidalExtent representing a full field period.
+
+        Parameters:
+        ----------- 
+        flux_surface : FluxSurface
+            The flux surface for which to create the toroidal extent.
+        dphi : float
+            An optional offset to add to both the start and end angles.
+        Returns:
+        --------
+        ToroidalExtent
+            The created ToroidalExtent.
+        '''
         return self(dphi, 2 * jnp.pi / flux_surface.settings.nfp + dphi)
     
     @classmethod 
     def full(self):
+        '''
+        Create a ToroidalExtent representing the full toroidal angle [0, 2pi].
+
+        Returns:
+        --------
+        ToroidalExtent
+            The created ToroidalExtent.
+        '''
         return self(0.0, 2 * jnp.pi)
 
     def full_angle(self):
+        '''
+        Whether the toroidal extent represents a full 2pi angle. Used for creating closed meshes.
+
+        Returns:
+        --------
+        bool
+            True if the toroidal extent represents a full 2pi angle, False otherwise.
+        '''
         return bool(jnp.allclose(self.end - self.start, 2 * jnp.pi))
     
     def __iter__(self):
@@ -376,6 +564,22 @@ class ToroidalExtent:
 # ===================================================================================================================================================================================
 @partial(jax.jit)
 def _cylindrical_position_direct(flux_surface : FluxSurface, theta, phi):        
+    '''
+    Cylindrical position on the flux surface as a function of (theta, phi) for a single surface (1D data).
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        Cylindrical position(s) on the flux surface [R, Z, phi]
+    '''
     assert flux_surface.data.Rmnc.ndim == 1, "Rmnc must be a 1D array but is of shape {}".format(flux_surface.data.Rmnc.shape)
     
     # This in essence computes:
@@ -405,6 +609,22 @@ def _cylindrical_position_direct(flux_surface : FluxSurface, theta, phi):
 
 @partial(jax.jit)
 def _cartesian_position_direct(flux_surface : FluxSurface, theta, phi):
+    '''
+    Cartesian position on the flux surface as a function of (theta, phi) for a single surface (1D data).
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        Cartesian position(s) on the flux surface [x, y, z]
+    '''
     RZphi = _cylindrical_position_direct(flux_surface, theta, phi)
     return _cylindrical_to_cartesian(RZphi)
 
@@ -412,12 +632,58 @@ _dx_dtheta_direct = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_direct,
 
 @partial(jax.jit)
 def _arc_length_theta_direct(flux_surface : FluxSurface, theta, phi):
+    '''
+    Arc length with respect to theta on the flux surface as a function of (theta, phi) for a single surface (1D data).
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        Arc length(s) with respect to theta on the flux surface.
+    '''
     dx_dtheta = _dx_dtheta_direct(flux_surface, theta, phi)
     dx_dtheta_norm = jnp.linalg.norm(dx_dtheta, axis=-1)
     return dx_dtheta_norm
 
 @eqx.filter_jit
 def _cylindrical_position_interpolated(flux_surface : FluxSurface,  s,  theta, phi):
+    '''
+    Cylindrical position on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
+
+    Computes:
+
+    R   = sum_mn [ Rmnc(s) * cos(m * theta - n * phi) ]
+    Z   = sum_mn [ Zmns(s) * sin(m * theta - n * phi) ]
+
+    where Rmnc(s) and Zmns(s) are obtained via interpolation in the surface index s and all arrays are in the VMEC representation [not 2D arrays but flattened
+    with explicit mode vectors].
+
+    Vectorized fully over s, theta, phi.
+
+    This function does not parallelize over modes to avoid creating large intermediate arrays, only over points.
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    s : jnp.ndarray
+        Surface index or normalized flux label
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        Cylindrical position(s) on the flux surface [R, Z, phi]
+    '''
     assert flux_surface.data.Rmnc.ndim == 2, "Data must be a 2D array but is of shape {} [Did you use a FluxSurface with only 1D data? Check out make_2d_flux_surface.]".format(flux_surface.data.Rmnc.shape)
     
     # This in essence computes:
@@ -450,6 +716,36 @@ def _cylindrical_position_interpolated(flux_surface : FluxSurface,  s,  theta, p
 
 @eqx.filter_jit
 def _cartesian_position_interpolated(flux_surface : FluxSurface, s, theta, phi):
+    '''
+    Cartesian position on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
+
+    Computes:
+
+    R   = sum_mn [ Rmnc(s) * cos(m * theta - n * phi) ]
+    Z   = sum_mn [ Zmns(s) * sin(m * theta - n * phi) ]
+
+    where Rmnc(s) and Zmns(s) are obtained via interpolation in the surface index s and all arrays are in the VMEC representation [not 2D arrays but flattened
+    with explicit mode vectors].
+
+    Vectorized fully over s, theta, phi.
+    
+    This function does not parallelize over modes to avoid creating large intermediate arrays, only over points.
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    s : jnp.ndarray
+        Surface index or normalized flux label
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        Cartesian position(s) on the flux surface [R, Z, phi]
+    '''
     RZphi = _cylindrical_position_interpolated(flux_surface, s, theta, phi)
     return _cylindrical_to_cartesian(RZphi)
 
@@ -457,6 +753,24 @@ _dx_dtheta = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_interpolated, 
 
 @eqx.filter_jit
 def _arc_length_theta(flux_surface : FluxSurface, s, theta, phi):
+    ''''
+    Arc length with respect to theta on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    s : jnp.ndarray
+        Surface index or normalized flux label
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray   
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        Arc length(s) with respect to theta on the flux surface.
+    '''
     dx_dtheta = _dx_dtheta(flux_surface, s, theta, phi)
     dx_dtheta_norm = jnp.linalg.norm(dx_dtheta, axis=-1)
     return dx_dtheta_norm
@@ -472,6 +786,24 @@ _cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cart
 
 @eqx.filter_jit
 def _dx_dphi_cross_dx_dtheta(flux_surface : FluxSurface, s, theta, phi):
+    '''
+    Compute the cross product of dr/dphi and dr/dtheta on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    s : jnp.ndarray 
+        Surface index or normalized flux label
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        The cross product of dr/dphi and dr/dtheta on the flux surface.
+    '''
     dX_dtheta_and_dX_dphi = _cartesian_position_interpolated_grad(flux_surface, s, theta, phi)
     # We use dr/dphi x dr/dtheta 
     # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
@@ -481,6 +813,24 @@ def _dx_dphi_cross_dx_dtheta(flux_surface : FluxSurface, s, theta, phi):
 
 @eqx.filter_jit
 def _normal_interpolated(flux_surface : FluxSurface, s, theta, phi):    
+    '''
+    Normal vector on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    s : jnp.ndarray
+        Surface index or normalized flux label
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        Normal vector(s) on the flux surface.
+    '''
     # We use dr/dphi x dr/dtheta 
     # Then, we want to have the normal vector outwards to the LCFS and not point into the plasma
     # This is accomplised by using the dphi_x_dtheta member. 
@@ -495,6 +845,24 @@ _cartesian_position_interpolated_grad_grad = jax.jit(jnp.vectorize(stack_jacfwd(
 
 @eqx.filter_jit
 def _principal_curvatures_interpolated(flux_surface : FluxSurface, s, theta, phi):
+    '''
+    Principal curvatures on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).  
+
+    Parameters:
+    -----------
+    flux_surface : FluxSurface
+        The flux surface object.
+    s : jnp.ndarray
+        Surface index or normalized flux label
+    theta : jnp.ndarray
+        Poloidal angle(s)
+    phi : jnp.ndarray
+        Toroidal angle(s)
+    Returns:
+    --------
+    jnp.ndarray
+        Principal curvatures(s) on the flux surface, shape (..., 2) where last index 0 is k1 and last index 1 is k2.
+    '''
     dX_dtheta_and_dX_dphi                        = _cartesian_position_interpolated_grad(flux_surface, s, theta, phi)
     d2X_dtheta2_and_d2X_dthetadphi_and_d2X_dphi2 = _cartesian_position_interpolated_grad_grad(flux_surface, s, theta, phi)
 

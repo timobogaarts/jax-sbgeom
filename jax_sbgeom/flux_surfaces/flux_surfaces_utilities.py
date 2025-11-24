@@ -1,11 +1,11 @@
 from . import FluxSurfaceNormalExtendedNoPhi
-from functools import partial
-import jax
+
 import jax.numpy as jnp
-
+from warnings import warn
 from jax_sbgeom.jax_utils.raytracing import find_minimum_distance_to_mesh
+import equinox as eqx
 
-@partial(jax.jit, static_argnums=(2,3))
+@eqx.filter_jit
 def generate_thickness_matrix(flux_surface : FluxSurfaceNormalExtendedNoPhi, mesh, n_theta : int, n_phi : int):
     '''
     Generate thickness matrix of an external mesh with respect to a no-phi extended flux surface.
@@ -32,7 +32,9 @@ def generate_thickness_matrix(flux_surface : FluxSurfaceNormalExtendedNoPhi, mes
         Thickness matrix values.
 
     '''
-    
+    if not isinstance(flux_surface, FluxSurfaceNormalExtendedNoPhi):
+        warn("in generate_thickness_matrix, expected as type FluxSurfaceNormalExtendedNoPhi, but got type: " + str(type(flux_surface)) + ". Results may be incorrect as this does not "
+        "guarantee a straight line as extension", RuntimeWarning)
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta)
     phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.settings.nfp, n_phi)
     theta, phi = jnp.meshgrid(theta, phi, indexing='ij')

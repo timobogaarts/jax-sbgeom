@@ -159,6 +159,22 @@ def coil_surface_loss(d_i : jnp.ndarray, coilset : CoilSet, n_coils : int, unifo
     return _coil_surface_distance_loss(total_s_array, coilset) + uniformity_loss_weight * _uniformity_loss(total_s_array) + repulsive_loss_weight * _repulsion_loss(total_s_array)
 
 def _create_coil_surface_loss_function(coilset : CoilSet, uniformity_penalty : float, repulsive_penalty : float):
+    '''
+    Create a coil surface loss function for optimization. It only depends on the d_i parameters.
+
+    Parameters:
+    ----------
+    coilset : CoilSet
+        CoilSet containing the coils.
+    uniformity_penalty : float
+        Weight of the uniformity loss.
+    repulsive_penalty : float
+        Weight of the repulsion loss.
+    Returns:
+    -------
+    loss_fn : function
+        Loss function that takes d_i parameters as input and returns the total coil surface loss.   
+    '''
     
     def loss_fn(params):
         return coil_surface_loss(
@@ -305,6 +321,33 @@ def _create_cws_interpolated(coilset : CoilSet, n_points_per_coil : int, d_opt :
 
 
 def _create_coil_winding_surface_from_parameters(ordered_coilset : CoilSet, n_points_per_coil : int, n_points_phi : int, d_parameters : jnp.ndarray, surface_type  : Literal['spline','fourier','direct'] = 'spline'):
+    '''
+    Create a coil winding surface mesh from a CoilSet and optimized d_i parameters. Uses different methods to create the surface.
+
+    Parameters:
+    ----------
+    ordered_coilset : CoilSet
+        CoilSet containing the coils to optimize.
+    n_points_per_coil : int
+        Number of points per coil in the output mesh.
+    n_points_phi : int
+        Number of points in the toroidal direction if needed.
+    d_parameters : jnp.ndarray  
+        Optimized parameters for the coil surface.
+    surface_type : Literal['spline', 'fourier', 'direct']
+        Method to create the surface:
+        - "spline" uses a 3D periodic spline on each toroidal line, 
+        - "fourier" uses a fourier transformation on each toroidal line
+        - "direct" meshes directly between the coils (no intermediate points)
+    
+    Returns:
+    -------
+    positions : jnp.ndarray [n_points, 3]
+        Positions of the coil winding surface mesh points.
+    connectivity : jnp.ndarray [n_faces, 3]
+        Connectivity of the coil winding surface mesh.
+    
+    '''
     positions_cws_opt = _create_cws_interpolated(ordered_coilset, n_points_per_coil, d_parameters)    
     if surface_type == 'fourier':
         return _cws_fourier(positions_cws_opt, n_points_phi)
@@ -313,7 +356,7 @@ def _create_coil_winding_surface_from_parameters(ordered_coilset : CoilSet, n_po
     elif surface_type == 'spline':
         return _cws_spline(positions_cws_opt, n_points_phi)
     else:
-        raise ValueError(f"Unknown surface type: {surface_type}")
+        raise ValueError(f"Unknown surface type: {surface_type} in _create_coil_winding_surface_from_parameters")
 
      
 

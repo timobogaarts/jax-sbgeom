@@ -15,6 +15,29 @@ import jax_sbgeom
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class FourierCoil(Coil):
+    '''
+    Class representing a coil defined by Fourier coefficients.
+
+    It uses the Fourier series to compute the position, tangent and normal along the coil.
+
+    x = centre_i[0] + sum_{n=1}^N [ fourier_cos[0, n] * cos(2 pi n s) + fourier_sin[0, n] * sin(2 pi n s) ]
+    y = centre_i[1] + sum_{n=1}^N [ fourier_cos[1, n] * cos(2 pi n s) + fourier_sin[1, n] * sin(2 pi n s) ]
+    z = centre_i[2] + sum_{n=1}^N [ fourier_cos[2, n] * cos(2 pi n s) + fourier_sin[2, n] * sin(2 pi n s) ]
+
+    For creating FourierCoil objects from discrete positions, use the function `curve_to_fourier_coefficients'`.
+    The parametrisation can be converted to equal-arclength by using `convert_fourier_coil_to_equal_arclength` or `convert_fourier_coilset_to_equal_arclength`.
+
+    Parameters
+    ----------
+    fourier_cos : jnp.ndarray
+        Fourier cosine coefficients [N_modes, 3]
+    fourier_sin : jnp.ndarray
+        Fourier sine coefficients [N_modes, 3]
+    centre_i : jnp.ndarray
+        Centre of the coil [3]
+        
+
+    '''
     fourier_cos : jnp.ndarray 
     fourier_sin : jnp.ndarray
     centre_i    : jnp.ndarray  
