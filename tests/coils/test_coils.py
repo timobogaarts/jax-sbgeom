@@ -10,7 +10,7 @@ from functools import partial
 from typing import Type, List
 
 import pytest
-from functools import lru_cache
+
 
 jax.config.update("jax_enable_x64", True)
 
@@ -34,194 +34,176 @@ def _check_single_vectorized(fun):
     onp.testing.assert_allclose(r_1, r_2.reshape(r_1.shape))
     onp.testing.assert_allclose(r_1, r_3.reshape(r_1.shape))
 
-def _get_coil_files():
-    return ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
-
-@pytest.fixture(scope="session", params = _get_coil_files())
-def _get_all_discrete_coils(request):    
-    coilset_sbgeom = SBGeom.Coils.Discrete_Coil_Set_From_HDF5(request.param)    
-    coilset_jaxsbgeom = [jsb.coils.DiscreteCoil.from_positions(coilset_sbgeom[i].Get_Vertices()) for i in range(coilset_sbgeom.Number_of_Coils())]
-    
-    return coilset_jaxsbgeom, coilset_sbgeom
+from pathlib import Path
+data_input = Path(__file__).parent.parent / "data" / "coils"
 
 
-@pytest.fixture(scope="session", params = _get_coil_files())
+
+def _get_all_discrete_coils(request):        
+    positions = onp.load(request)
+    return [jsb.coils.DiscreteCoil.from_positions(positions[i]) for i in range(positions.shape[0])]
+
 def _get_all_fourier_coils(request):
-    coilset_sbgeom = SBGeom.Coils.Discrete_Coil_Set_From_HDF5(request.param)
-    coilset_fourier = SBGeom.Coils.Convert_to_Fourier_Coils(coilset_sbgeom)
-    
-    coilset_jax = [jsb.coils.FourierCoil(jnp.array(i.Get_Fourier_Cos()), jnp.array(i.Get_Fourier_Sin()), jnp.array(i.Get_Centre())) for i in coilset_fourier]
-    return coilset_jax, coilset_fourier
+    coilset_fourier = jsb.coils.convert_to_fourier_coilset(jsb.coils.CoilSet.from_list(_get_all_discrete_coils(request)))
+    return [coilset_fourier[i] for i in range(coilset_fourier.n_coils)]
 
-@pytest.fixture(scope="session", params = _get_coil_files())
-def _get_all_fourier_coils_truncated(request):
-    # This is just to ensure that we have the shaping correct
-    coilset_sbgeom = SBGeom.Coils.Discrete_Coil_Set_From_HDF5(request.param)
-    coilset_fourier = SBGeom.Coils.Convert_to_Fourier_Coils(coilset_sbgeom, Nftrunc = 5)
+
+def _data_file_to_data_output(data_file : Path, extra_text : str = "") -> Path:
+    filename_stem = data_file.stem
     
-    coilset_jax = [jsb.coils.FourierCoil(jnp.array(i.Get_Fourier_Cos()), jnp.array(i.Get_Fourier_Sin()), jnp.array(i.Get_Centre())) for i in coilset_fourier]
-    return coilset_jax, coilset_fourier
+    output_filename = filename_stem.replace("_input", extra_text + "_output.npy")
+    return data_input / output_filename
+
 
 #=================================================================================================================================================
 #                                                   Position & Tangent tests
 #=================================================================================================================================================
 
-def _sampling_s(n_s : int = 111):
+def _sampling_s(n_s : int = 27):
     return jnp.linspace(0.0, 1.0, n_s)
 
-def _check_positions(coilset_jsb, coilset_sbgeom, atol = 1e-12):
-    for i in range(coilset_sbgeom.Number_of_Coils()):
-        coil_jsb = coilset_jsb[i]
-        coil_sbgeom = coilset_sbgeom[i]
-        s_samples = _sampling_s()
-        pos_jsb    = coil_jsb.position(s_samples)
-        pos_sbgeom = coil_sbgeom.Position(onp.array(s_samples))
+def _get_positions(coilset_jsb):
+    positions = []
+    for i in range(len(coilset_jsb)):
+        positions.append(coilset_jsb[i].position(_sampling_s()))
+    return onp.array(positions)
 
-        onp.testing.assert_allclose(pos_jsb, pos_sbgeom, atol=atol)
+def _get_tangents(coilset_jsb):
+    tangents = []
+    for i in range(len(coilset_jsb)):
+        tangents.append(coilset_jsb[i].tangent(_sampling_s()))
+    return onp.array(tangents)
 
-def _check_tangent(coilset_jsb, coilset_sbgeom, atol = 1e-12):
-    for i in range(coilset_sbgeom.Number_of_Coils()):
-        coil_jsb = coilset_jsb[i]
-        coil_sbgeom = coilset_sbgeom[i]
-        s_samples = _sampling_s()
-        pos_jsb    = coil_jsb.tangent(s_samples)
-        pos_sbgeom = coil_sbgeom.Tangent(onp.array(s_samples))
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_discrete_coil_position(data_file):    
+    coils = _get_all_discrete_coils(data_file)    
 
-        onp.testing.assert_allclose(pos_jsb, pos_sbgeom, atol=atol)
+    positions_this =  _get_positions(coils)
+    expected_positions = onp.load(_data_file_to_data_output(data_file, extra_text="_discrete_coil_position"))
+    onp.testing.assert_allclose(positions_this, expected_positions, atol=1e-12, rtol=1e-12)
 
-def test_discrete_coil_position(_get_all_discrete_coils):
-    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    _check_positions(coilset_jaxsbgeom, coilset_sbgeom, atol=1e-12)
 
-def test_discrete_coil_tangent(_get_all_discrete_coils):
-    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    _check_tangent(coilset_jaxsbgeom, coilset_sbgeom, atol=1e-12)
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_discrete_coil_position(data_file):    
+    coils              = _get_all_discrete_coils(data_file)    
+    positions_this      =  _get_tangents(coils)
+    expected_positions = onp.load(_data_file_to_data_output(data_file, extra_text="_discrete_coil_tangent"))
+    onp.testing.assert_allclose(positions_this, expected_positions, atol=1e-12, rtol=1e-12)
 
-def test_fourier_coil_position(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
-    _check_positions(coilset_jax, coilset_sbgeom, atol=1e-12)
-def test_fourier_coil_tangent(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
-    _check_tangent(coilset_jax, coilset_sbgeom, atol=1e-12)
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_fourier_coil_position(data_file):    
+    coils = _get_all_fourier_coils(data_file)    
+
+    positions_this =  _get_positions(coils)
+    expected_positions = onp.load(_data_file_to_data_output(data_file, extra_text="_fourier_coil_position"))
+    onp.testing.assert_allclose(positions_this, expected_positions, atol=1e-12, rtol=1e-12)
+
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_fourier_coil_tangent(data_file):    
+    coils              = _get_all_fourier_coils(data_file)    
+    positions_this      =  _get_tangents(coils)
+    expected_positions = onp.load(_data_file_to_data_output(data_file, extra_text="_fourier_coil_tangent"))
+    onp.testing.assert_allclose(positions_this, expected_positions, atol=1e-12, rtol=1e-12)
+
 
 #=================================================================================================================================================
 #                                                   Finite Size Tests
 #=================================================================================================================================================
-def _sampling_s_finite_size(n_s : int = 111):
+def _sampling_s_finite_size(n_s : int = 27):
     return jnp.linspace(0.0, 1.0, n_s, endpoint=False)
 
-def _switch_finite_size(coil_sbgeom, width_0, width_1, method, ns, **kwargs):
-    if method == "centroid":
-        return coil_sbgeom.Finite_Size_Lines_Centroid(width_1, width_0, ns)
-    elif method == "frenet_serret":
-        return coil_sbgeom.Finite_Size_Lines_Frenet(width_1, width_0, ns)
-    elif method == "rmf":
-        return coil_sbgeom.Finite_Size_Lines_RMF(width_1, width_0, ns)
-    else:
-        raise NotImplementedError(f"Finite size method '{method}' not implemented for SBGeom discrete coils.")
+def _get_finite_size_arguments():
+    return {
+        jsb.coils.CentroidFrame        : (),
+        jsb.coils.FrenetSerretFrame    : (),
+        jsb.coils.RotationMinimizedFrame: (50,),
+        jsb.coils.RadialVectorFrame    : (jnp.array([jnp.sin(jnp.linspace(0, 2 * jnp.pi, 11)), jnp.cos(jnp.linspace(0, 2 * jnp.pi, 11)), jnp.zeros(11)]).T,)                                                   
+    }
 
-def _switch_finite_size_cjax(coil_jax, width_0, width_1, method, ns, **kwargs):
-    if method == "centroid":
-        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coil_jax, jsb.coils.base_coil.CentroidFrame())
-        return finitesize_coil
-    elif method == "frenet_serret":
-        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coil_jax, jsb.coils.base_coil.FrenetSerretFrame())
-        return finitesize_coil
-    elif method == "rmf":
-        number_of_rmf_samples = kwargs.get("number_of_rmf_samples", 1000)
-        kwargdict = {"number_of_rmf_samples" : number_of_rmf_samples}
-        finitesize_coil = jsb.coils.base_coil.FiniteSizeCoil(coil_jax, jsb.coils.base_coil.RotationMinimizedFrame.from_coil(coil_jax, number_of_rmf_samples))
-        return finitesize_coil
-    else:
-        raise NotImplementedError(f"Finite size method '{method}' not implemented for SBGeom discrete coils.")
 
-def _switch_finite_size_cjax_lines(coil_jax, width_0, width_1, method, ns, **kwargs):
-    fscoil = _switch_finite_size_cjax(coil_jax, width_0, width_1, method, ns, **kwargs)    
-    return fscoil.finite_size(_sampling_s_finite_size(ns), width_0, width_1)
+def _get_all_finite_sizes(coilset_discrete):
+    width_phi = 0.25
+    width_R   = 0.33
+
+    finitesizes = _get_finite_size_arguments()
+
+  
+    fs_coils = []
+    for coil_i in range(len(coilset_discrete)):
+        coil_i_fs = []
+        for method_class in finitesizes.keys():            
+            fs_coil = jsb.coils.FiniteSizeCoil.from_coil(coilset_discrete[coil_i], method_class, *finitesizes[method_class])
+            coil_i_fs.append(fs_coil.finite_size(s = _sampling_s_finite_size(), width_phi = width_phi, width_radial = width_R)  )
+        fs_coils.append(coil_i_fs)
+
+
+    return onp.array(fs_coils)
     
-def _check_finite_size(coilset_jsb, coilset_sbgeom, method, rtol = 1e-12, atol = 1e-12, **kwargs):
-    for i in range(coilset_sbgeom.Number_of_Coils()):
-        coil_jsb = coilset_jsb[i]
-        coil_sbgeom = coilset_sbgeom[i]
-        s_samples = _sampling_s_finite_size()
-        width_0 = 0.3
-        width_1 = 0.5
-        jsb_lines    = _switch_finite_size_cjax_lines(coil_jsb, width_0, width_1, method, ns = s_samples.shape[0], **kwargs)
-        
-        sbgeom_lines = _switch_finite_size(coil_sbgeom, width_0, width_1, method, ns = s_samples.shape[0])
 
-        jsb_comparison = jnp.moveaxis(jsb_lines, 1,0).reshape(-1,3)
-        onp.testing.assert_allclose(sbgeom_lines, jsb_comparison, rtol = rtol, atol=atol)
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_discrete_coil_finite_size(data_file):
+    coils_discrete = _get_all_discrete_coils(data_file)    
+    finitesizes_this =  _get_all_finite_sizes(coils_discrete)
+    expected_finitesizes = onp.load(_data_file_to_data_output(data_file, extra_text="_discrete_coil_finite_size"))
+    onp.testing.assert_allclose(finitesizes_this, expected_finitesizes, atol=1e-12, rtol=1e-12)
 
-# No centroid finite size for discrete coils: it is defined differently in SBGeom and jax-sbgeom
-def test_discrete_coil_finite_size_rmf(_get_all_discrete_coils):
-    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    nrmf = _sampling_s_finite_size().shape[0]
-    _check_finite_size(coilset_jaxsbgeom, coilset_sbgeom, method="rmf", rtol =1e-7,  atol=1e-7, number_of_rmf_samples = nrmf)
-
-def test_fourier_coil_finite_size_centroid(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
-    _check_finite_size(coilset_jax, coilset_sbgeom, method="centroid", rtol =1e-12,  atol=1e-12)
-
-def test_fourier_coil_finite_size_rmf(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
-    nrmf = _sampling_s_finite_size().shape[0]
-    _check_finite_size(coilset_jax, coilset_sbgeom, method="rmf", rtol =1e-12,  atol=1e-12, number_of_rmf_samples = nrmf)
-
-def test_fourier_coil_finite_size_frenet(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
-    nrmf = _sampling_s_finite_size().shape[0]
-    _check_finite_size(coilset_jax, coilset_sbgeom, method="frenet_serret", rtol =1e-12,  atol=1e-12, number_of_rmf_samples = nrmf)
-
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_fourier_coil_finite_size(data_file):
+    coils_fourier = _get_all_fourier_coils(data_file)    
+    finitesizes_this =  _get_all_finite_sizes(coils_fourier)
+    expected_finitesizes = onp.load(_data_file_to_data_output(data_file, extra_text="_fourier_coil_finite_size"))
+    onp.testing.assert_allclose(finitesizes_this, expected_finitesizes, atol=1e-12, rtol=1e-12)
 #=================================================================================================================================================
 #                                                  Meshing
 #=================================================================================================================================================
-def _mesh_switch_finite_size(coil_sbgeom, width_0, width_1, method, ns, **kwargs):
-    if method == "centroid":
-        return coil_sbgeom.Mesh_Triangles_Centroid(width_1, width_0, ns)
-    elif method == "frenet_serret":
-        return coil_sbgeom.Mesh_Triangles_Frenet(width_1, width_0, ns)
-    elif method == "rmf":
-        return coil_sbgeom.Mesh_Triangles_RMF(width_1, width_0, ns)
-    else:
-        raise NotImplementedError(f"Finite size method '{method}' not implemented for SBGeom discrete coils.")
 
-def _check_coils(coilset_jsb, coilset_sbgeom, method, atol = 1e-12, **kwargs):
-    for i in range(coilset_sbgeom.Number_of_Coils()):
-        coil_jsb = coilset_jsb[i]
-        coil_sbgeom = coilset_sbgeom[i]
-        sampling_s = _sampling_s_finite_size()
-        width_0 = 0.3
-        width_1 = 0.5
-        
-        fs_coil     = _switch_finite_size_cjax(coil_jsb, width_0, width_1, method, ns = sampling_s.shape[0], **kwargs)
-        jsb_mesh    = jsb.coils.coil_meshing.mesh_coil_surface(fs_coil, sampling_s.shape[0], width_0, width_1)
-        sbgeom_mesh = _mesh_switch_finite_size(coil_sbgeom, width_0, width_1, method, ns = sampling_s.shape[0], **kwargs)
-        onp.testing.assert_allclose(jsb_mesh[0], sbgeom_mesh.vertices, atol=atol)
-        onp.testing.assert_array_equal(jsb_mesh[1], sbgeom_mesh.connectivity)
+def _get_coil_mesh(coilset_jsb):
+    from jax_sbgeom.coils import mesh_coil_surface
+    width_phi = 0.25
+    width_R   = 0.33
 
-# No centroid meshing for discrete coils: it is defined differently in SBGeom and jax-sbgeom
-def test_discrete_coil_rmf_meshing(_get_all_discrete_coils):
-    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    _check_coils(coilset_jaxsbgeom, coilset_sbgeom, method="rmf", atol=1e-7, number_of_rmf_samples = _sampling_s_finite_size().shape[0])
+    finitesizes = _get_finite_size_arguments()
 
-def test_fourier_coil_centroid_meshing(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
-    _check_coils(coilset_jax, coilset_sbgeom, method="centroid", atol=1e-12)
-def test_fourier_coil_rmf_meshing(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
-    _check_coils(coilset_jax, coilset_sbgeom, method="rmf", atol=1e-12, number_of_rmf_samples = _sampling_s_finite_size().shape[0])
-def test_fourier_coil_frenet_meshing(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
-    _check_coils(coilset_jax, coilset_sbgeom, method="frenet_serret", atol=1e-12, number_of_rmf_samples = _sampling_s_finite_size().shape[0])
+  
+    coil_pos  = []
+    coil_conn = []
 
-#=================================================================================================================================================
-#                                                  Vectorization Tests
-#=================================================================================================================================================
+    for coil_i in range(len(coilset_jsb)):
+        coil_i_pos = []
+        coil_i_conn = []
+        for method_class in finitesizes.keys():            
+            fs_coil = jsb.coils.FiniteSizeCoil.from_coil(coilset_jsb[coil_i], method_class, *finitesizes[method_class])
+
+            mesh_i = mesh_coil_surface(fs_coil, 23, width_R, width_phi)
+            coil_i_pos.append(mesh_i[0])
+            coil_i_conn.append(mesh_i[1])
+        coil_pos.append(coil_i_pos)
+        coil_conn.append(coil_i_conn)
+    
+    return jnp.concatenate([onp.array(coil_pos).reshape(-1), onp.array(coil_conn).reshape(-1)], axis=0)
+
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_discrete_coil_mesh(data_file):
+    coil_posconn = _get_coil_mesh(_get_all_discrete_coils(data_file))
+
+    expected_posconn = onp.load(_data_file_to_data_output(data_file, extra_text="_discrete_coil_mesh"))
+    onp.testing.assert_allclose(coil_posconn, expected_posconn, atol=1e-12, rtol=1e-12)
+
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_fourier_coil_mesh(data_file):
+    coil_posconn = _get_coil_mesh(_get_all_fourier_coils(data_file))
+
+    expected_posconn = onp.load(_data_file_to_data_output(data_file, extra_text="_fourier_coil_mesh"))
+    onp.testing.assert_allclose(coil_posconn, expected_posconn, atol=1e-12, rtol=1e-12)
+
+# #=================================================================================================================================================
+# #                                                  Vectorization Tests
+# #=================================================================================================================================================
 
 @pytest.mark.slow
-def test_discrete_coil_vectorized_position(_get_all_discrete_coils):
-    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_discrete_coil_vectorized_position(data_file):
+    coilset_jaxsbgeom = _get_all_discrete_coils(data_file)
     
     _check_single_vectorized(coilset_jaxsbgeom[0].position)
     _check_single_vectorized(coilset_jaxsbgeom[0].tangent)
@@ -241,8 +223,9 @@ def test_discrete_coil_vectorized_position(_get_all_discrete_coils):
     
 
 @pytest.mark.slow
-def test_fourier_coil_vectorized_position(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_fourier_coil_vectorized_position(data_file):
+    coilset_jax = _get_all_fourier_coils(data_file)
     
     _check_single_vectorized(coilset_jax[0].position)
     _check_single_vectorized(coilset_jax[0].tangent)
@@ -260,32 +243,39 @@ def test_fourier_coil_vectorized_position(_get_all_fourier_coils):
         return finitesize_coil.finite_size(s, 0.3, 0.5)
     _check_single_vectorized(rmf)
 
-#=================================================================================================================================================
-#                                                  Converting Tests
-#=================================================================================================================================================
+# #=================================================================================================================================================
+# #                                                  Converting Tests
+# #=================================================================================================================================================
 
+def _get_fourier_transformation(coilset, n_ftrunc ):
+    fourier_cos = []
+    fourier_sin = []
+    centres    = []    
+
+    for i in range(len(coilset)):
+        coil = jsb.coils.convert_to_fourier_coil(coilset[i], n_modes=n_ftrunc)
+        
+        fourier_cos.append(coil.fourier_cos)
+        fourier_sin.append(coil.fourier_sin)
+        centres.append(coil.centre_i)
+    return onp.concatenate([onp.array(fourier_cos).ravel(), onp.array(fourier_sin).ravel(), onp.array(centres).ravel()], axis=0)
+
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
 @pytest.mark.parametrize("n_ftrunc", [None, 11])
-def test_converting_fourier_coils(_get_all_discrete_coils, n_ftrunc):
-    coilset_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
-    fourier_coilset_sbgeom = SBGeom.Coils.Convert_to_Fourier_Coils(coilset_sbgeom, Nftrunc = n_ftrunc)
-    
-    fourier_coilset_jax= jsb.coils.fourier_coil.convert_to_fourier_coilset(jsb.coils.CoilSet.from_list(coilset_jaxsbgeom), n_modes = n_ftrunc)
+def test_converting_fourier_coils(data_file, n_ftrunc):
+    coilset_jaxsbgeom = _get_all_discrete_coils(data_file)
 
-    for i in range(coilset_sbgeom.Number_of_Coils()):
-        coil_jsb = coilset_jaxsbgeom[i]
-        fourier_coil_sbgeom = fourier_coilset_sbgeom[i]
-                
-        fourier_coil_jaxsbgeom = jsb.coils.fourier_coil.convert_to_fourier_coil(coil_jsb, n_modes = n_ftrunc)
+    fourier_transform = _get_fourier_transformation(coilset_jaxsbgeom, n_ftrunc)
+    filename_output = _data_file_to_data_output(data_file, extra_text=f"_fourier_coil_transformation_nft{n_ftrunc}") if n_ftrunc is not None else _data_file_to_data_output(data_file, extra_text=f"_fourier_coil_transformation")
+    onp.testing.assert_allclose(
+        fourier_transform, 
+        onp.load(filename_output), 
+        atol=1e-12, rtol=1e-12
+    )
 
-        onp.testing.assert_allclose(fourier_coil_jaxsbgeom.fourier_cos, fourier_coil_sbgeom.Get_Fourier_Cos(), rtol=1e-12, atol=1e-12)
-        onp.testing.assert_allclose(fourier_coil_jaxsbgeom.fourier_sin, fourier_coil_sbgeom.Get_Fourier_Sin(), rtol=1e-12, atol=1e-12)
-        onp.testing.assert_allclose(fourier_coil_jaxsbgeom.centre_i, fourier_coil_sbgeom.Get_Centre(), rtol=1e-12, atol=1e-12)
-        onp.testing.assert_allclose(fourier_coilset_jax.coils.fourier_cos[i], fourier_coilset_sbgeom[i].Get_Fourier_Cos(), rtol=1e-12, atol=1e-12)
-        onp.testing.assert_allclose(fourier_coilset_jax.coils.fourier_sin[i], fourier_coilset_sbgeom[i].Get_Fourier_Sin(), rtol=1e-12, atol=1e-12)
-        onp.testing.assert_allclose(fourier_coilset_jax.coils.centre_i[i], fourier_coilset_sbgeom[i].Get_Centre(), rtol=1e-12, atol=1e-12)
-
-def test_equal_arclength(_get_all_fourier_coils):
-    coilset_jax, coilset_sbgeom = _get_all_fourier_coils
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_equal_arclength(data_file):
+    coilset_jax = _get_all_fourier_coils(data_file)
 
     n_points_sample  = 2531
     n_points_desired = 1513
@@ -308,9 +298,9 @@ def test_equal_arclength(_get_all_fourier_coils):
     check_arclength_uniformity(coilset_new_lin.coils, n_points_ea, threshold=5e-3)
 
 
-#=================================================================================================================================================
-#                                                  Reversal
-#=================================================================================================================================================    
+# #=================================================================================================================================================
+# #                                                  Reversal
+# #=================================================================================================================================================    
 classes          = [jsb.coils.CentroidFrame, jsb.coils.RotationMinimizedFrame, jsb.coils.RadialVectorFrame, jsb.coils.FrenetSerretFrame]
 classes_discrete = classes[:-1]  # Frenet-Serret frame not implemented for discrete coils
 
@@ -396,14 +386,17 @@ def _get_finitesize_coilset(coils_jax, frame_class : Type[jsb.coils.base_coil.Fi
     finitesize_coilset = [jsb.coils.base_coil.FiniteSizeCoil(coil_jax, frame_class.from_coil(coil_jax, *additional_arguments_per_coil(frame_class, i, len(coils_jax)))) for i, coil_jax in enumerate(coils_jax)]
     return finitesize_coilset
 
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
 @pytest.mark.parametrize("frame_class", classes_discrete)
-def test_finitesize_coilset_reverse_discrete(_get_all_discrete_coils, frame_class):
-    coils_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+def test_finitesize_coilset_reverse_discrete(data_file, frame_class):
+    coils_jaxsbgeom  = _get_all_discrete_coils(data_file)
     coils_finitesize = _get_finitesize_coilset(coils_jaxsbgeom, frame_class)
     [check_reverse_finite_size(coils_finitesize[i]) for i in range(len(coils_jaxsbgeom))]
 
+
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
 @pytest.mark.parametrize("frame_class", classes)
-def test_finitesize_coilset_reverse_fourier(_get_all_fourier_coils, frame_class):
-    coils_jaxsbgeom, coilset_sbgeom = _get_all_fourier_coils
+def test_finitesize_coilset_reverse_fourier(data_file, frame_class):
+    coils_jaxsbgeom = _get_all_fourier_coils(data_file)
     coils_finitesize = _get_finitesize_coilset(coils_jaxsbgeom, frame_class)
     [check_reverse_finite_size(coils_finitesize[i]) for i in range(len(coils_jaxsbgeom))]

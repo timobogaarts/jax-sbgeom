@@ -12,36 +12,11 @@ import pytest
 from functools import lru_cache
 from typing import Type, List
 
+from .test_coils import _get_all_discrete_coils
+from .test_coils import _get_all_fourier_coils
+from .test_coils import data_input
+
 jax.config.update("jax_enable_x64", True)
-
-def _get_coil_files():
-    return ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
-
-
-@pytest.fixture(scope="session", params = _get_coil_files())
-def _get_all_discrete_coils(request):    
-    coilset_sbgeom = SBGeom.Coils.Discrete_Coil_Set_From_HDF5(request.param)    
-    coilset_jaxsbgeom = [jsb.coils.DiscreteCoil.from_positions(coilset_sbgeom[i].Get_Vertices()) for i in range(coilset_sbgeom.Number_of_Coils())]
-    
-    return coilset_jaxsbgeom, coilset_sbgeom
-
-
-@pytest.fixture(scope="session", params = _get_coil_files())
-def _get_all_fourier_coils(request):
-    coilset_sbgeom = SBGeom.Coils.Discrete_Coil_Set_From_HDF5(request.param)
-    coilset_fourier = SBGeom.Coils.Convert_to_Fourier_Coils(coilset_sbgeom)
-    
-    coilset_jax = [jsb.coils.FourierCoil(jnp.array(i.Get_Fourier_Cos()), jnp.array(i.Get_Fourier_Sin()), jnp.array(i.Get_Centre())) for i in coilset_fourier]
-    return coilset_jax, coilset_fourier
-
-@pytest.fixture(scope="session", params = _get_coil_files())
-def _get_all_fourier_coils_truncated(request):
-    # This is just to ensure that we have the shaping correct
-    coilset_sbgeom = SBGeom.Coils.Discrete_Coil_Set_From_HDF5(request.param)
-    coilset_fourier = SBGeom.Coils.Convert_to_Fourier_Coils(coilset_sbgeom, Nftrunc = 11) # Truncate to 11 modes to ensure we don't match any stellarator number of coils
-    
-    coilset_jax = [jsb.coils.FourierCoil(jnp.array(i.Get_Fourier_Cos()), jnp.array(i.Get_Fourier_Sin()), jnp.array(i.Get_Centre())) for i in coilset_fourier]
-    return coilset_jax, coilset_fourier
 
 
 #=================================================================================================================================================
@@ -81,12 +56,14 @@ def check_vector_coilset(coils_jax):
     onp.testing.assert_allclose(centre_base, centre_vec)
     onp.testing.assert_allclose(normal_base, normal_vec)
 
-def test_vector_coilset_discrete(_get_all_discrete_coils):
-    coils_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_vector_coilset_discrete(data_file):
+    coils_jaxsbgeom = _get_all_discrete_coils(data_file)
     check_vector_coilset(coils_jaxsbgeom)   
 
-def test_vector_coilset_fourier(_get_all_fourier_coils_truncated):
-    coils_jax, coilset_sbgeom = _get_all_fourier_coils_truncated
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
+def test_vector_coilset_fourier(data_file):
+    coils_jax  = _get_all_fourier_coils(data_file)
     check_vector_coilset(coils_jax)
 
 
@@ -145,14 +122,17 @@ def check_finitesize_coilset(coils_jax, frame_class : Type[jsb.coils.base_coil.F
         onp.testing.assert_allclose(finite_size_frame_base, finite_size_frame_vec[i])
         onp.testing.assert_allclose(finite_size_base, finite_size_vec[i])
 
+
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy")    )
 @pytest.mark.parametrize("frame_class", classes_discrete)
-def test_finitesize_coilset_discrete(_get_all_discrete_coils, frame_class):
-    coils_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+def test_finitesize_coilset_discrete(data_file, frame_class):
+    coils_jaxsbgeom = _get_all_discrete_coils(data_file)
     check_finitesize_coilset(coils_jaxsbgeom, frame_class)
 
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy")    )
 @pytest.mark.parametrize("frame_class", classes)
-def test_finitesize_coilset_fourier(_get_all_fourier_coils_truncated, frame_class):
-    coils_jax, coilset_sbgeom = _get_all_fourier_coils_truncated
+def test_finitesize_coilset_fourier(data_file, frame_class):
+    coils_jax = _get_all_fourier_coils(data_file)
     check_finitesize_coilset(coils_jax, frame_class)
 
 #-------------------------------------------------------------------------------------------------------------------------------------------------
@@ -168,15 +148,18 @@ def check_optimization(coilset_jax):
     assert err < 1e-4
     
 
+
 @pytest.mark.slow
-def test_cws_optimization_discrete(_get_all_discrete_coils):
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy")    )
+def test_cws_optimization_discrete(data_file):
    
-    coils_jaxsbgeom, coilset_sbgeom = _get_all_discrete_coils
+    coils_jaxsbgeom= _get_all_discrete_coils(data_file)
     check_optimization(coils_jaxsbgeom)
 
 @pytest.mark.slow
-def test_cws_optimization_fourier(_get_all_fourier_coils_truncated):
-    coils_jax, coilset_sbgeom = _get_all_fourier_coils_truncated
+@pytest.mark.parametrize("data_file", data_input.glob("*_input.npy")    )
+def test_cws_optimization_fourier(data_file):
+    coils_jax = _get_all_fourier_coils(data_file)
     check_optimization(coils_jax)   
    
 
