@@ -3,22 +3,24 @@ import pytest
 import jax
 import jax.numpy as jnp 
 import numpy as onp
-def _get_files():
-    vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
-    return vmec_files
+
+from pathlib import Path
+DATA_INPUT_FLUX_SURFACES = Path(__file__).parent.parent / "data" / "flux_surfaces"
 
 
 
-@pytest.fixture(scope="session", params = _get_files())
-def _get_flux_surface_jax(request):    
-    fs_jax    = jsb.flux_surfaces.FluxSurface.from_hdf5(request.param)
+
+
+def _get_flux_surface_jax(data_file):    
+    fs_jax    = jsb.flux_surfaces.FluxSurface.from_hdf5(data_file)
     return fs_jax
 
 
 
 
-def test_bvh_probing(_get_flux_surface_jax):
-    fs_jax = _get_flux_surface_jax
+@pytest.mark.parametrize("data_file", DATA_INPUT_FLUX_SURFACES.glob("*_input.h5"))
+def test_bvh_probing(data_file):
+    fs_jax = _get_flux_surface_jax(data_file)
     N_test = 300
     surface_mesh = jsb.flux_surfaces.flux_surface_meshing.mesh_surface(fs_jax, 1.0, jsb.flux_surfaces.ToroidalExtent.full(), 65,62)
 
@@ -44,9 +46,10 @@ def test_bvh_probing(_get_flux_surface_jax):
         onp.testing.assert_allclose(sorted_hits, sorted_original_hits)
 
 
-def test_bvh_closest_point(_get_flux_surface_jax):
+@pytest.mark.parametrize("data_file", DATA_INPUT_FLUX_SURFACES.glob("*_input.h5"))
+def test_bvh_closest_point(data_file):
 
-    fs_jax = _get_flux_surface_jax
+    fs_jax = _get_flux_surface_jax(data_file)
     N_test = 300
     surface_mesh = jsb.flux_surfaces.flux_surface_meshing.mesh_surface(fs_jax, 1.0, jsb.flux_surfaces.ToroidalExtent.full(), 65,62)
 

@@ -6,22 +6,28 @@ import numpy as onp
 from jax_sbgeom.jax_utils import raytracing as RT
 from jax_sbgeom.jax_utils import mesh_to_pyvista_mesh
 jax.config.update("jax_enable_x64", True)
+from .test_flux_surface_base_data import DATA_INPUT_FLUX_SURFACES
 
 
-def _get_coil_and_fs_files():
-#    return [()"/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
-    return [("/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5"), ("/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5"), ("/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5")]
 
-def _get_discrete_coils(coil_file):
-    import h5py
-    with h5py.File(coil_file, 'r') as f:
-        coil_data = jnp.array(f['Dataset1'])
-    return jsb.coils.CoilSet.from_list([jsb.coils.DiscreteCoil.from_positions(coil_data[i]) for i in range(coil_data.shape[0])])
+def _get_coil_file(data_file):
+    
+    
+    return data_file.parent.parent / "coils" / (data_file.stem + ".npy")
 
-@pytest.fixture(scope="session", params = _get_coil_and_fs_files())
-def _get_cws_and_flux_surface(request):
-    fs_jax = jsb.flux_surfaces.FluxSurfaceNormalExtendedNoPhi.from_hdf5(request.param[0])
-    coilset_jax = _get_discrete_coils(request.param[1])
+
+
+def _get_all_discrete_coils(request):        
+    positions = onp.load(request)
+    return jsb.coils.CoilSet.from_list([jsb.coils.DiscreteCoil.from_positions(positions[i]) for i in range(positions.shape[0])])
+
+
+
+def _get_cws_and_flux_surface(data_file):
+    
+    fs_jax = jsb.flux_surfaces.FluxSurfaceNormalExtendedNoPhi.from_hdf5(data_file)
+    coilset_jax = _get_all_discrete_coils(_get_coil_file(data_file=data_file))
+    
     cws_mesh = jsb.coils.coil_winding_surface.create_optimized_coil_winding_surface(coilset_jax, 100, 200, 'spline')
     return cws_mesh, fs_jax
 
@@ -46,8 +52,9 @@ def check_cws_ray_tracing(cws_mesh, fs_jax):
     onp.testing.assert_allclose(onp.array(dmesh_trimesh), onp.array(dmesh_jax), atol=1e-10)
     onp.testing.assert_allclose(onp.array(reinterpolated_positions), onp.array(final_points), atol=1e-10)
 
-@pytest.mark.slow
-def test_cws_ray_tracing(_get_cws_and_flux_surface):
-    cws_mesh, fs_jax = _get_cws_and_flux_surface
+
+@pytest.mark.parametrize("data_file", DATA_INPUT_FLUX_SURFACES.glob("*_input.h5"))
+def test_cws_ray_tracing(data_file):
+    cws_mesh, fs_jax =_get_cws_and_flux_surface(data_file)
     check_cws_ray_tracing(cws_mesh, fs_jax)
     
