@@ -3,7 +3,7 @@ import h5py
 import jax
 import numpy as onp
 from dataclasses import dataclass
-from jax_sbgeom.jax_utils.utils import stack_jacfwd, interpolate_array
+from jax_sbgeom.jax_utils import stack_jacfwd, interpolate_array
 from functools import partial
 import equinox as eqx
 
@@ -1019,7 +1019,7 @@ def _volume_from_fourier_half_mod(flux_surface : FluxSurface, s : float):
 #----------------------------------------------------------------------------------------------------------------------------------------------------------
 #                                                                          interpolating d(theta,phi) on full module grid
 #---------------------------------------------------------------------------------------------------------------------------------------------------------- 
-from jax_sbgeom.jax_utils.utils import bilinear_interp
+from jax_sbgeom.jax_utils import bilinear_interp
 def _normalize_theta_phi_full_mod(theta : jnp.ndarray, phi : jnp.ndarray, nfp : int):
     '''
     Normalize theta and phi to [0, 1] range for full module interpolation

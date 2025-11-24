@@ -453,4 +453,4 @@ def calculate_normals_from_closest_point_on_mesh(coil : Union[Coil, CoilSet], ex
     '''
     positions = coil.position(jnp.linspace(0,1,n_coil_samples, endpoint=False)) #[n_coils, n_coil_samples, 3]        
     closest_points, dmin, d_idx = jax_sbgeom.jax_utils.raytracing.get_closest_points_on_mesh(positions, external_mesh)    
-    return positions, jax_sbgeom.jax_utils.utils.surface_normals_from_mesh(external_mesh)[d_idx]
+    return positions, jax_sbgeom.jax_utils.surface_normals_from_mesh(external_mesh)[d_idx]

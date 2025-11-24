@@ -7,7 +7,7 @@ from typing import Literal
 from .base_coil import Coil
 from .base_coil import _radial_vector_centroid_from_data, _frame_from_radial_vector
 from .discrete_coil import DiscreteCoil
-from jax_sbgeom.jax_utils.utils import stack_jacfwd
+from jax_sbgeom.jax_utils import stack_jacfwd
 from functools import partial
 from .coilset import CoilSet
 import jax_sbgeom
@@ -287,9 +287,9 @@ def _sampling_positions_equal_arc_length(fourier_coil : FourierCoil, n_points_sa
     s_sampling            = jnp.linspace(0.0, 1.0, n_points_sample, endpoint=False)
     arc_length            = _arc_length_fourier(fourier_coil, s_sampling)        
     if method == 'linear':
-        return jax_sbgeom.jax_utils.utils._resample_uniform_periodic_linear(arc_length, n_points_desired)
+        return jax_sbgeom.jax_utils.resample_uniform_periodic_linear(arc_length, n_points_desired)
     elif method == 'pchip':
-        return jax_sbgeom.jax_utils.utils._resample_uniform_periodic_pchip(arc_length, n_points_desired)    
+        return jax_sbgeom.jax_utils.resample_uniform_periodic_pchip(arc_length, n_points_desired)    
     else:
         raise ValueError(f"Unknown method {method} for resampling to equal arc length")
     

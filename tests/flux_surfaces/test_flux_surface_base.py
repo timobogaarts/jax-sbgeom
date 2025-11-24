@@ -14,8 +14,7 @@ from jax_sbgeom.flux_surfaces.flux_surfaces_base import _check_whether_make_norm
 import pytest
 from functools import lru_cache
 
-from jax_sbgeom.jax_utils.utils import _mesh_to_pyvista_mesh
-
+from jax_sbgeom.jax_utils import mesh_to_pyvista_mesh
 
 def _check_vectorized(fun):
     s_1 = jnp.array([0.5264, 0.567837])
@@ -206,7 +205,7 @@ def _check_all_closed_surfaces(fs_jax, fs_sbgeom, atol = 1e-10):
 
     for surf in surfaces:
         points, connectivity = surf
-        mesh = _mesh_to_pyvista_mesh(points, connectivity)  
+        mesh = mesh_to_pyvista_mesh(points, connectivity)  
         onp.testing.assert_allclose(mesh.volume, jsb.flux_surfaces.flux_surface_meshing._volume_of_mesh(points, connectivity), atol= atol)
 
     

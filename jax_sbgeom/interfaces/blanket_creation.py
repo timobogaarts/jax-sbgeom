@@ -10,6 +10,16 @@ from functools import cached_property
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class LayeredBlanket:
+    '''
+    Class representing a layered blanket structure around a flux surface.
+
+    Attributes
+    ----------
+    d_layers : tuple
+        Tuple of radial distances defining the layers of the blanket. These can be shaped differently.
+    n_layers : int
+        Number of layers in the blanket
+    '''
     d_layers : tuple    
 
     @property
@@ -20,6 +30,23 @@ class LayeredBlanket:
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class LayeredDiscreteBlanket(LayeredBlanket):
+    '''
+    Class representing a layered discrete blanket structure around a flux surface.
+
+    Attributes
+    ----------
+    n_theta : int
+        Number of poloidal samples per layer
+    n_phi : int
+        Number of toroidal samples per layer
+    resolution_layers : tuple
+        Tuple of number of discrete layers per blanket layer
+    toroidal_extent : ToroidalExtent
+        Toroidal extent of the blanket  
+    n_discrete_layers : int
+        Total number of discrete layers in the blanket
+        
+    '''
     n_theta            : int
     n_phi              : int
     resolution_layers  : tuple
@@ -34,11 +61,37 @@ class LayeredDiscreteBlanket(LayeredBlanket):
         return jnp.sum(jnp.array(self.resolution_layers))
     
     def layer_slice(self, layer_index : int):
+        '''
+        Get the slice corresponding to a specific discrete layer in the blanket mesh.
+
+        Parameters
+        ----------
+        layer_index : int
+            Index of the discrete layer to retrieve the slice for. Can be negative for indexing from the end.
+        Returns
+        -------
+        slice
+            Slice object corresponding to the specified discrete layer.
+        '''
         return _compute_layer_slice(self.n_discrete_layers, self.n_theta, self.n_phi, layer_index)
     
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class DiscreteFiniteSizeCoilSet:
+    '''
+    Class representing a set of discrete finite size coils forming a coilset for blanket creation.
+
+    Attributes
+    -------     
+    n_points_per_coil : int
+        Number of discrete points per coil
+    toroidal_extent : ToroidalExtent
+        Toroidal extent of the coilset
+    width_R : float
+        Radial width of the finite sized coils
+    width_phi : float
+        Toroidal width of the finite sized coils
+    '''
     n_points_per_coil : int
     toroidal_extent   : ToroidalExtent
     width_R : float
@@ -59,11 +112,42 @@ def _compute_layer_slice(n_discrete_layers : int, n_theta : int, n_phi : int, la
     return layer_blocks
 
 def compute_spacing(blanket : LayeredDiscreteBlanket, s_power_sampling : int):
+    '''
+    Computes the s spacing for the layered discrete blanket in s for in [0, 1 + n_layers].
+
+    Parameters
+    ----------
+    blanket : LayeredDiscreteBlanket
+        The layered discrete blanket to compute the spacing for.
+    s_power_sampling : int
+        The power to which the radial coordinate s is raised when sampling.
+        Higher values lead to more points near the inner layers.
+    Returns
+    -------
+    jnp.ndarray
+        The s spacing for the layered discrete blanket. 
+
+    '''
     inner_blanket_spacing = jnp.linspace(0.0, 1.0, blanket.resolution_layers[0]) ** s_power_sampling
     s_layers              = jnp.concatenate([inner_blanket_spacing, jnp.concatenate([jnp.linspace(2.0 + i, 3.0 + i, blanket.resolution_layers[i  + 1], endpoint=False) for i in range(blanket.n_layers - 1)], axis=0), jnp.array([1.0 + blanket.n_layers])])                 
     return s_layers
 
 def compute_d_spacing(blanket  : LayeredDiscreteBlanket, s_power_sampling : int):
+    '''
+    Computes the d spacing for the layered discrete blanket in d for in [0, d_layers[-1]].
+
+    Parameters
+    ----------
+    blanket : LayeredDiscreteBlanket
+        The layered discrete blanket to compute the spacing for.
+    s_power_sampling : int
+        The power to which the radial coordinate s is raised when sampling.
+        Higher values lead to more points near the inner layers.
+    Returns
+    -------
+    jnp.ndarray
+        The d spacing for the layered discrete blanket.
+    '''
     inner_blanket_spacing = jnp.linspace(0.0, 1.0, blanket.resolution_layers[0]) ** s_power_sampling    
     d_layers              = jnp.concatenate([inner_blanket_spacing, jnp.concatenate([jnp.linspace(1.0 + blanket.d_layers[i], 1.0 + blanket.d_layers[i+1], blanket.resolution_layers[i  + 1], endpoint=False) for i in range(blanket.n_layers - 1)], axis=0), jnp.array([1.0 + blanket.d_layers[-1]])])                 
     return d_layers
@@ -90,7 +174,6 @@ def mesh_tetrahedral_blanket(flux_surface : FluxSurface, blanket : LayeredDiscre
     elements : jax.numpy.ndarray
         The elements of the tetrahedral mesh.=
     '''
-
     inner_blanket_spacing = jnp.linspace(0.0, 1.0, blanket.resolution_layers[0]) ** s_power_sampling
     s_layers              = jnp.concatenate([inner_blanket_spacing, jnp.concatenate([jnp.linspace(2.0 + i, 3.0 + i, blanket.resolution_layers[i  + 1], endpoint=False) for i in range(blanket.n_layers - 1)], axis=0), jnp.array([1.0 + blanket.n_layers])])                 
     return _mesh_tetrahedra(flux_surface, s_layers, True, blanket.toroidal_extent.start, blanket.toroidal_extent.end, bool(blanket.toroidal_extent.full_angle()), blanket.n_theta, blanket.n_phi)

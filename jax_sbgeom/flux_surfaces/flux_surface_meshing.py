@@ -693,6 +693,16 @@ def _mesh_tetrahedra_connectivity(n_layers : int, include_axis : bool, full_angl
 
     Note that this function only creates the connectivity of the tetrahedra. The points must be created separately.
 
+    The points are spaced as follows:
+
+    if axis is included:
+        - First n_phi points are the axis points (one per toroidal angle)
+    Then,
+        - For each layer from 1 to n_layers - 1:
+            - For each theta from 0 to n_theta - 1:
+                - For each phi from 0 to n_phi - 1:
+                    - Point at (s_layer, theta, phi)
+
     n_layers is the number of flux surfaces, not the number of resulting layers.
 
     Parameters

@@ -21,7 +21,7 @@ import jax_sbgeom.flux_surfaces as jsf
 
 from dataclasses import dataclass
 import functools
-from jax_sbgeom.jax_utils.utils import _mesh_to_pyvista_mesh, cumulative_trapezoid_uniform_periodic, interp1d_jax
+from jax_sbgeom.jax_utils import mesh_to_pyvista_mesh, cumulative_trapezoid_uniform_periodic, interp1d_jax
 import StellBlanket.SBGeom as sbg
 import StellBlanket
 from StellBlanket.SBGeom import Coils_jax as CJ
@@ -137,10 +137,10 @@ plotter = pv.Plotter()
 finitesize_coilset = jsc.FiniteSizeCoilSet.from_coilset(jax_coilset, jsc.RotationMinimizedFrame, 100)
 
 
-base_mesh = _mesh_to_pyvista_mesh(*jsc.mesh_coilset_surface(finitesize_coilset, 100, 0.2, 0.2))
+base_mesh = mesh_to_pyvista_mesh(*jsc.mesh_coilset_surface(finitesize_coilset, 100, 0.2, 0.2))
 plotter.add_mesh(pv.Spline(sol.ys))
 plotter.add_mesh(base_mesh)
-plotter.add_mesh(_mesh_to_pyvista_mesh(*mesh_thing))
+plotter.add_mesh(mesh_to_pyvista_mesh(*mesh_thing))
 plotter.show()
 
 

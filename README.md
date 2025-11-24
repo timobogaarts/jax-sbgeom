@@ -14,4 +14,4 @@ pip install 'jupyterlab' 'pyvista[all]'
 
 
 # Tests
-Tests use SBGeom itself to verify against. 
+Tests use the previous SBGeom itself to verify against. 

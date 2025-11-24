@@ -32,7 +32,7 @@ def _flux_surface_reaction_rates(
         Ti0 : float , Ti1 : float , Tialpha : float,        
         ):
     '''
-    Function to create a Flux_Surface_Source_14MeV using parametric profile.
+    Function to compute neutron source rates as a function of the flux surface label s.
 
     All profiles are defined as:
         (p0 - p1) * (1 - s)**alpha + p1
@@ -74,7 +74,8 @@ def _flux_surface_reaction_rates(
 
 def flux_surface_reaction_rates_simple(s_values : jnp.ndarray, n0 : float, nalpha : float, Ti0 : float, Tialpha : float):
     '''
-    Function to create a Flux_Surface_Source_14MeV using simple profile.
+    Function to create a simple neutron reaction rate profile as a function of the flux surface label s.
+
     All profiles are defined as:
         n(s) = n0 * (1 - s)**n_alpha
         T(s) = T0 * (1 - s)**Ti_alpha
@@ -94,6 +95,11 @@ def flux_surface_reaction_rates_simple(s_values : jnp.ndarray, n0 : float, nalph
     Tialpha : float
         Ion temperature profile exponent        
     n_samples : int
+
+    Returns:
+    --------
+    reaction_rate : jnp.ndarray
+        Reaction rate profile in m^-3 s^-1
          
     '''
     return _flux_surface_reaction_rates(

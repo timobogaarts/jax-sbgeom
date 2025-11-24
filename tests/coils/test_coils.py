@@ -17,7 +17,7 @@ jax.config.update("jax_enable_x64", True)
 
 def test_backend():
     import jax
-    print("Backend:", jax.default_backend())
+    
 
 def _check_single_vectorized(fun):
     s_0 = 0.1
@@ -354,8 +354,7 @@ def check_reverse_finite_size(finitesize_coil):
     reversed_finitesize_coil = finitesize_coil.reverse_parametrisation()
     position_original = finitesize_coil.position(s)
     position_reversed = reversed_finitesize_coil.position(s_reverse)
-
-    print(finitesize_coil.finite_size_method)
+    
     radial_vector_original = finitesize_coil.radial_vector(s)
     radial_vector_reversed = reversed_finitesize_coil.radial_vector(s_reverse)
 

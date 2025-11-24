@@ -12,7 +12,7 @@ from functools import partial
 import jax_sbgeom.coils as jsc
 import jax_sbgeom.flux_surfaces as jsf
 
-from jax_sbgeom.jax_utils.utils import _mesh_to_pyvista_mesh
+from jax_sbgeom.jax_utils import mesh_to_pyvista_mesh
 import pyvista as pv
 import jax_sbgeom.coils.coil_winding_surface as cws
 import h5py
@@ -87,7 +87,7 @@ def optimize_cws_and_plot(coil_i : int = 2, convert_to_fourier : bool = True):
 
         
 
-        base_mesh = _mesh_to_pyvista_mesh(*jsc.mesh_coilset_surface(finitesize_coilset, 100, 0.2, 0.2))
+        base_mesh = mesh_to_pyvista_mesh(*jsc.mesh_coilset_surface(finitesize_coilset, 100, 0.2, 0.2))
 
         sarr_base = jsc.coil_winding_surface._create_total_s(xarr, coilset.n_coils)
         sarr_opt  = jsc.coil_winding_surface._create_total_s(xarr_opt, coilset.n_coils)
@@ -96,8 +96,8 @@ def optimize_cws_and_plot(coil_i : int = 2, convert_to_fourier : bool = True):
         positions_opt = coilset.position_different_s(sarr_opt)
     
 
-        coil_surface_non_opt = _mesh_to_pyvista_mesh(jnp.moveaxis(positions, 1,0).reshape(-1,3), jsb.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions.shape[1], positions.shape[0],True, True))
-        coil_surface_opt     = _mesh_to_pyvista_mesh(jnp.moveaxis(positions_opt, 1,0).reshape(-1,3), jsb.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions.shape[1], positions.shape[0],True, True))
+        coil_surface_non_opt = mesh_to_pyvista_mesh(jnp.moveaxis(positions, 1,0).reshape(-1,3), jsb.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions.shape[1], positions.shape[0],True, True))
+        coil_surface_opt     = mesh_to_pyvista_mesh(jnp.moveaxis(positions_opt, 1,0).reshape(-1,3), jsb.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions.shape[1], positions.shape[0],True, True))
         
 
 
@@ -176,7 +176,7 @@ def plot_bvh(coil_i = 2, idx_child = 0):
     positions_coilset = coilset.position_different_s(jsb.coils.coil_winding_surface._create_total_s(sarr[0], coilset.n_coils))
     vertices = jsb.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(positions_coilset.shape[1], positions_coilset.shape[0], True, True)
     positions_standard_ordering = jnp.moveaxis(positions_coilset, 0, 1) # ntheta, nphi [number of coils], 3
-    mesh_pv_cws = _mesh_to_pyvista_mesh(positions_standard_ordering.reshape(-1,3), vertices)
+    mesh_pv_cws = mesh_to_pyvista_mesh(positions_standard_ordering.reshape(-1,3), vertices)
     mesh_cws_def = (positions_standard_ordering.reshape(-1,3), vertices)
 
 
@@ -218,7 +218,7 @@ def plot_bvh(coil_i = 2, idx_child = 0):
 
     colors = ["red", "green", "blue", "yellow", "cyan"]
     plotter = pv.Plotter()
-    plotter.add_mesh(_mesh_to_pyvista_mesh(*mesh_cws_def))
+    plotter.add_mesh(mesh_to_pyvista_mesh(*mesh_cws_def))
     plotter.add_mesh(pv.PolyData(onp.array(mesh_cws_def[0][mesh_cws_def[1][probe_idx]])), 'red')
     for i, aabb_i in enumerate(aabb_polydata):
         plotter.add_mesh(aabb_polydata[i], color = colors[i%len(colors)])
@@ -247,12 +247,12 @@ def plot_different_cws_methods(vmec_i = 2):
     plotter = pv.Plotter(shape=(1,3))
 
     plotter.subplot(0,0)
-    plotter.add_mesh(_mesh_to_pyvista_mesh(*cws_direct), color='red', opacity=1.0, show_edges=True)
+    plotter.add_mesh(mesh_to_pyvista_mesh(*cws_direct), color='red', opacity=1.0, show_edges=True)
 
     plotter.subplot(0,1)
-    plotter.add_mesh(_mesh_to_pyvista_mesh(*cws_fourier), color='green', opacity=1.0, show_edges=True)
+    plotter.add_mesh(mesh_to_pyvista_mesh(*cws_fourier), color='green', opacity=1.0, show_edges=True)
     plotter.subplot(0,2)
-    plotter.add_mesh(_mesh_to_pyvista_mesh(*cws_spline), color='lightblue', opacity=1.0, show_edges=True)
+    plotter.add_mesh(mesh_to_pyvista_mesh(*cws_spline), color='lightblue', opacity=1.0, show_edges=True)
     plotter.link_views()
     plotter.show()
 

@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp 
 import numpy as onp
 from jax_sbgeom.jax_utils import raytracing as RT
-from jax_sbgeom.jax_utils.utils import _mesh_to_pyvista_mesh
+from jax_sbgeom.jax_utils import mesh_to_pyvista_mesh
 jax.config.update("jax_enable_x64", True)
 
 
@@ -33,7 +33,7 @@ def check_cws_ray_tracing(cws_mesh, fs_jax):
     theta, phi         = jnp.meshgrid(theta, phi, indexing='ij')
     positions_lcfs_mg  = fs_jax.cartesian_position(1.0,  theta, phi)
     directions_lcfs_mg = fs_jax.cartesian_position(2.0, theta, phi) - positions_lcfs_mg 
-    mesh_rt            = _mesh_to_pyvista_mesh(*cws_mesh)
+    mesh_rt            = mesh_to_pyvista_mesh(*cws_mesh)
     trimesh_mesh       = mesh_rt.extract_surface()
     
     final_points, final_rays, final_cells = trimesh_mesh.multi_ray_trace(onp.array(positions_lcfs_mg).reshape(-1,3), onp.array(directions_lcfs_mg).reshape(-1,3), first_point = True,retry = True)

@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as onp
 from typing import Literal
-from jax_sbgeom.jax_utils.utils import interpolate_array_modulo_broadcasted, _reverse_except_begin
+from jax_sbgeom.jax_utils import interpolate_array_modulo_broadcasted, reverse_except_begin
 from functools import partial
 from typing import Type
 
@@ -414,7 +414,7 @@ class RadialVectorFrame(FiniteSizeMethod):
         return cls(radial_vectors_i = radial_vectors)
     
     def reverse_parametrisation(self):
-        return type(self)(_reverse_except_begin(self.radial_vectors_i))
+        return type(self)(reverse_except_begin(self.radial_vectors_i))
         
     def compute_radial_vector(self, coil : Coil, s : jnp.ndarray):
         # Coil was already used to compute radial_vectors_i

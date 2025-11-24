@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from typing import Type
 from dataclasses import dataclass
 
-def _get_norm_centroids(positions, connectivity):
+def _get_norm_centroids(positions : jnp.ndarray, connectivity : jnp.ndarray) -> jnp.ndarray:
     '''
     Get normalized centroids for the triangles defined by the connectivity on the positions.
 
@@ -81,10 +81,48 @@ def _create_morton_codes(normalized_positions : jnp.ndarray) -> jnp.ndarray:
     return morton_codes
 
 def _common_prefix_length(a : jnp.ndarray, b : jnp.ndarray) -> jnp.ndarray:
+    '''
+    Compute the common prefix length between two unsigned integers a and b.
+
+    Uses jax.lax.clz
+
+    Parameters:
+    -----------
+    a : jnp.ndarray
+        Unsigned integer array
+    b : jnp.ndarray
+        Unsigned integer array
+    Returns:
+    ----------- 
+    jnp.ndarray
+        Common prefix length array (scalar)
+
+    '''
     return jax.lax.clz(jnp.bitwise_xor(a,b))
 
 
 def _delta_ij(sorted_morton_codes : jnp.ndarray, i : int, j : int, int_dtype : jnp.dtype = jnp.int32):
+    '''
+    Compute the delta_ij function as defined in [1].
+
+
+    [1] Karras, T. (2012, June). Maximizing parallelism in the construction of BVHs, octrees, and k-d trees. In Proceedings of the Fourth ACM SIGGRAPH/Eurographics Conference on High-Performance Graphics (pp. 33-37).
+
+    Parameters: 
+    -----------
+    sorted_morton_codes : jnp.ndarray
+        Sorted morton codes array
+    i : int
+        Index i
+    j : int
+        Index j
+    int_dtype : jnp.dtype
+        Integer dtype for the output
+    Returns:
+    -----------
+    jnp.ndarray
+        Delta_ij value (scalar)    
+    '''
 
     # To ensure no OOB access, first clip the indices
     i_safe = jnp.clip(i, 0, sorted_morton_codes.shape[0]-1)
@@ -110,6 +148,13 @@ def _delta_ij(sorted_morton_codes : jnp.ndarray, i : int, j : int, int_dtype : j
 
 @jax.jit
 def _create_parallel_binary_radix_tree(morton_codes : jnp.ndarray):
+    '''
+    Create a parallel binary radix tree as defined in [1].
+     
+    [1] Karras, T. (2012, June). Maximizing parallelism in the construction of BVHs, octrees, and k-d trees. In Proceedings of the Fourth ACM SIGGRAPH/Eurographics Conference on High-Performance Graphics (pp. 33-37).
+
+    Parameters:
+    '''
     # See https://developer.nvidia.com/blog/parallelforall/wp-content/uploads/2012/11/karras2012hpg_paper.pdf
 
     N = morton_codes.shape[0]                      
@@ -185,6 +230,15 @@ def _create_parallel_binary_radix_tree(morton_codes : jnp.ndarray):
 
 @jax.jit
 def _check_binary_radix_tree(left_idx, right_idx):
+    '''
+    Convenience function to check whether a binary radix tree is actually valid (i.e. one can visit all nodes from the leafs to the root).
+
+    Parameters:
+    left_idx : jnp.ndarray
+        Left child indices for each node
+    right_idx : jnp.ndarray
+        Right child indices for each node
+    '''
     N_leaves = (left_idx.shape[0] +1) //2
     
     initial_available = jnp.zeros((2 *  N_leaves - 1), dtype = jnp.bool) 
@@ -207,8 +261,9 @@ def _check_binary_radix_tree(left_idx, right_idx):
     return jnp.sum(total_computed) == total_computed.shape[0]
 
 @jax.jit
-def _create_aabb(primitive_coordinates : jnp.ndarray):
-    """Create axis-aligned bounding box for a given primitive.
+def _create_aabb(primitive_coordinates : jnp.ndarray) -> jnp.ndarray:
+    '''
+    Create axis-aligned bounding box for a given primitive.
 
     Parameters
     ----------
@@ -219,7 +274,7 @@ def _create_aabb(primitive_coordinates : jnp.ndarray):
     -------
     jnp.ndarray of shape (N, 2, 3)
       representing min and max corners of the AABB.
-    """
+    '''
     min_corner = jnp.min(primitive_coordinates, axis=-2)
     max_corner = jnp.max(primitive_coordinates, axis=-2)
     return jnp.stack([min_corner, max_corner], axis = 1)
@@ -227,6 +282,26 @@ def _create_aabb(primitive_coordinates : jnp.ndarray):
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class BVH:
+    '''
+    Dataclass representing a Bounding Volume Hierarchy (BVH).
+
+    Create using build_lbvh function.
+
+    Attributes
+    ----------
+    left_idx : jnp.ndarray
+        Left child indices for each node
+    right_idx : jnp.ndarray
+        Right child indices for each node
+    aabb : jnp.ndarray
+        AABB for each node
+    leafs : jnp.ndarray
+        bool array (whether it is a leaf)
+    order : jnp.ndarray
+        order from primitives -> BVH
+    inverse_order : jnp.ndarray
+        order from BVH -> primitives
+    '''
     left_idx      : jnp.ndarray # left child indices for each node
     right_idx     : jnp.ndarray # right child indices for each node
     aabb          : jnp.ndarray # AABB for each node
@@ -316,6 +391,27 @@ points_in_aabbvec = jax.vmap(_point_in_aabb, in_axes=(0, 0))
 
 @jax.jit
 def probe_bvh(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_hit_size : int = 64):
+    '''
+    Probe a BVH with a set of points to find which AABBs contain the points.
+
+    Parameters:
+    -----------
+    bvh : BVH
+        The BVH to probe.
+    points : jnp.ndarray
+        The points to probe the BVH with. Shape (N_points, 3)
+    stack_size : int
+        The size of the stack to use for traversal.
+    max_hit_size : int
+        The maximum number of hits to record per point.
+    Returns:
+    -----------
+    jnp.ndarray
+        An array of shape (N_points, max_hit_size) containing the indices of the AABBs that contain each point. 
+        If a point hits fewer than max_hit_size AABBs, the remaining entries are filled with -1.
+    int 
+        The number of traversal loops performed.
+    '''
 
     N_leafs = (bvh.leafs.shape[0] + 1) // 2
 
@@ -394,9 +490,22 @@ def probe_bvh(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_hit_si
 
     return final_hits, n_loops
 
-def ray_intersects_aabb(origin, direction, aabb):
+def ray_intersects_aabb(origin : jnp.ndarray, direction : jnp.ndarray, aabb : jnp.ndarray):
     '''
-    Vectorized 
+    Vectorized function to check ray-AABB intersections using the slab method.
+
+    Parameters:
+    -----------
+    origin : jnp.ndarray
+        Ray origin of shape (..., 3)
+    direction : jnp.ndarray
+        Ray direction of shape (..., 3)
+    aabb : jnp.ndarray
+        Axis-aligned bounding box of shape (..., 2, 3)  
+    Returns:
+    -----------
+    jnp.ndarray
+        Boolean array indicating whether the ray intersects the AABB.
 
     '''
     inv_dir = jnp.where(direction == 0.0, jnp.inf, 1.0 / direction)  # precompute to avoid divides
@@ -412,10 +521,29 @@ def ray_intersects_aabb(origin, direction, aabb):
     hit = (t_exit >= jnp.maximum(t_enter, 0.0))
     return hit#, t_enter, t_exit
 
-
-
 @jax.jit
 def ray_traversal_bvh(bvh : BVH, points : jnp.ndarray, directions : jnp.ndarray, stack_size : int = 64, max_hit_size : int = 64):
+    '''
+    Traverse a BVH with a set of rays defined by points and directions.
+
+    Parameters:
+    -----------
+    bvh : BVH
+        The BVH to traverse.
+    points : jnp.ndarray
+        The ray origins. Shape (N_points, 3)
+    directions : jnp.ndarray
+        The ray directions. Shape (N_points, 3)
+    stack_size : int
+        The size of the stack to use for traversal.
+    max_hit_size : int
+        The maximum number of hits to record per ray.
+    Returns:
+    -----------
+    jnp.ndarray
+        An array of shape (N_points, max_hit_size) containing the indices of the AABBs that the rays intersect. 
+        If a ray hits fewer than max_hit_size AABBs, the remaining entries are filled with -1.  
+    '''
 
     N_leafs = (bvh.leafs.shape[0] + 1) // 2
 
@@ -492,6 +620,29 @@ def ray_traversal_bvh(bvh : BVH, points : jnp.ndarray, directions : jnp.ndarray,
 
 @jax.jit
 def ray_traversal_bvh_single(bvh : BVH, point : jnp.ndarray, direction : jnp.ndarray, stack_size : int = 128, max_hit_size : int = 128):
+    '''
+    Traverse a BVH with a single ray defined by point and direction.
+
+    Use ray_traversal_bvh_vectorized to handle multiple rays. This is only ~10% slower than ray_traversal_bvh for large number of rays.
+
+    Parameters:
+    -----------
+    bvh : BVH
+        The BVH to traverse.
+    point : jnp.ndarray
+        The ray origin. Shape (3,)
+    direction : jnp.ndarray
+        The ray direction. Shape (3,)
+    stack_size : int
+        The size of the stack to use for traversal.
+    max_hit_size : int
+        The maximum number of hits to record.
+    Returns:
+    -----------
+    jnp.ndarray
+        An array of shape (max_hit_size,) containing the indices of the AABBs that the ray intersects. 
+        If the ray hits fewer than max_hit_size AABBs, the remaining entries are filled with -1.    
+    '''
 
     N_leafs = (bvh.leafs.shape[0] + 1) // 2
 
@@ -565,21 +716,23 @@ ray_traversal_bvh_vectorized = jax.jit(jnp.vectorize(ray_traversal_bvh_single, e
 # =========================================================================================================
 
 @jax.jit
-def ray_triangle_intersection_single(point, direction, triangle, eps=1e-8):
+def ray_triangle_intersection_single(point : jnp.ndarray, direction : jnp.ndarray, triangle : jnp.ndarray, eps=1e-8):
     """
     Compute intersections of one ray with one trianlge
 
     Parameters
     ----------
-    origin:    (3,)
-        Ray origin
-    direction: (3,)
+    point:     jnp.ndarray
+      Ray origin. Shape (3,)
+    direction: jnp.ndarray
+      Ray direction. Shape (3,)
+    triangle:  jnp.ndarray
+      Triangle vertices. Shape (3, 3)
 
     Returns
     -------
-    t:        (T,) distance along ray (jnp.inf if no hit)
-    u, v:     (T,) barycentric coordinates
-    mask:     (T,) boolean array, True if hit
+    t:  
+        distance along ray (jnp.inf if no hit)    
     """
     v0 = triangle[0, :]
     v1 = triangle[1, :]
@@ -614,7 +767,24 @@ def ray_triangle_intersection_single(point, direction, triangle, eps=1e-8):
 ray_triangle_intersection_vectorized = jax.jit(jnp.vectorize(ray_triangle_intersection_single, signature='(3),(3),(3,3)->()'))
 
 @jax.jit
-def find_minimum_distance_to_mesh(points, directions, mesh):
+def find_minimum_distance_to_mesh(points : jnp.ndarray, directions : jnp.ndarray, mesh):
+    '''
+    Convenience function to find the minimum distance from rays to a triangle mesh.
+
+    Parameters:
+    -----------
+    points : jnp.ndarray
+        Ray origins. Shape (N_points, 3)
+    directions : jnp.ndarray
+        Ray directions. Shape (N_points, 3)
+    mesh : tuple of (positions, connectivity)
+        positions:    jnp.ndarray of shape (M, 3) representing the 3D coordinates of mesh vertices.
+        connectivity: jnp.ndarray of shape (K, 3) representing the triangle connectivity of the mesh.
+    Returns:
+    -----------
+    jnp.ndarray
+        An array of shape (N_points,) containing the minimum distance from each ray to the mesh. If no intersection occurs, the distance is jnp.inf.
+    '''
     bvh = build_lbvh(mesh[0], mesh[1]) # BVH
     hits_possible = ray_traversal_bvh_vectorized(bvh, points, directions)    
     mesh_total = jnp.moveaxis(mesh[0][mesh[1][bvh.order[hits_possible]]], -3, 0) # we move the possible hits to the front.
@@ -625,7 +795,7 @@ def find_minimum_distance_to_mesh(points, directions, mesh):
 #                                       Closest point on triangle
 #===========================================================================================================
 
-def closest_point_on_triangle(p, a, b, c):
+def closest_point_on_triangle(p : jnp.ndarray, a : jnp.ndarray, b : jnp.ndarray, c : jnp.ndarray):
     '''
     Compute the closest point on triangle abc to point p.
     Not vectorzed itself. Reimplements:
@@ -712,7 +882,20 @@ def closest_point_on_triangle(p, a, b, c):
         )
     )
 
-def _point_aabb_distance(p, aabb):
+def _point_aabb_distance(p : jnp.ndarray, aabb : jnp.ndarray):
+    '''
+    Compute squared distance from point to AABB. Returns 0 if point is inside AABB.
+    Parameters:
+    -----------
+    p : jnp.ndarray
+        (3,) array of point coordinates
+    aabb : jnp.ndarray  
+        (2, 3) array of AABB min and max corner coordinates
+    Returns:
+    -----------
+    distance : jnp.ndarray
+        Squared distance from point to AABB
+    '''
     # Distance from point to box (0 if inside)
     diff = jnp.maximum(0.0, jnp.maximum(aabb[..., 0, :] - p, p - aabb[..., 1, :]))
     return jnp.sum(diff**2)

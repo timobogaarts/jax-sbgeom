@@ -36,8 +36,8 @@ def _interpolation_cases():
 
 @pytest.mark.parametrize("x, y", _interpolation_cases())
 def test_pchip_derivatives(x, y):
-    # Compute derivatives using our JAX implementation
-    jax_derivs = jax_sbgeom.jax_utils.utils._pchip_derivatives(x, y)
+    # Compute derivatives using JAX implementation
+    jax_derivs = jax_sbgeom.jax_utils.numerical._pchip_derivatives(x, y)
 
     # Compute derivatives using SciPy's PchipInterpolator
     xnp, ynp = onp.array(x), onp.array(y)
@@ -51,10 +51,10 @@ def test_pchip_derivatives(x, y):
 
 @pytest.mark.parametrize("x, y", _interpolation_cases())
 def test_pchip_interpolation(x, y):
-    # Compute derivatives using our JAX implementation
+    # Compute derivatives using JAX implementation
     
     s_new               = jnp.linspace(x[0], x[-1], 50)
-    jax_interpolation   = jax_sbgeom.jax_utils.utils.pchip_interpolation(x, y, s_new)        
+    jax_interpolation   = jax_sbgeom.jax_utils.pchip_interpolation(x, y, s_new)        
     scipy_interpolation = scipy.interpolate.PchipInterpolator(x,y)(s_new)
 
     # Compare the results

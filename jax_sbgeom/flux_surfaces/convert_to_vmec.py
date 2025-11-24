@@ -4,7 +4,7 @@ from functools import partial
 from .flux_surfaces_base import _create_mpol_vector, _create_ntor_vector, FluxSurface, FluxSurfaceData, FluxSurfaceModes, FluxSurfaceSettings, _interpolate_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod_finite_difference
 from .flux_surfaces_base import _arc_length_theta_direct, _cylindrical_position_direct
 from .flux_surfaces_extended import FluxSurfaceNormalExtended, FluxSurfaceNormalExtendedNoPhi, FluxSurfaceNormalExtendedConstantPhi, FluxSurfaceFourierExtended
-from jax_sbgeom.jax_utils.utils import bilinear_interp, _resample_uniform_periodic_pchip, _resample_uniform_periodic_linear
+from jax_sbgeom.jax_utils import bilinear_interp, resample_uniform_periodic_pchip, resample_uniform_periodic_linear
 from warnings import warn
 from typing import Type, Tuple
 import equinox as eqx
@@ -214,7 +214,7 @@ def _convert_to_equal_arclength_single(flux_surface : FluxSurface, n_theta : int
     theta_mg_s, phi_mg_s = jnp.meshgrid(theta_s, phi_s, indexing='ij')    
     arc_lengths          = _arc_length_theta_direct(flux_surface, theta_mg_s, phi_mg_s) #[n_theta_s_arclength, n_phi]
     
-    new_theta_mg         = jax.vmap(_resample_uniform_periodic_pchip, in_axes=(1, None), out_axes=1)(arc_lengths, n_theta) * 2 * jnp.pi 
+    new_theta_mg         = jax.vmap(resample_uniform_periodic_pchip, in_axes=(1, None), out_axes=1)(arc_lengths, n_theta) * 2 * jnp.pi 
     
     _, phi_mg            = jnp.meshgrid(jnp.zeros(new_theta_mg.shape[0]), phi_s, indexing='ij')  # [n_theta_sample_arclength, n_phi]
 
