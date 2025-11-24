@@ -2,7 +2,7 @@ import os
 import jax_sbgeom as jsb
 import jax.numpy as jnp
 import numpy as onp
-import StellBlanket.SBGeom as SBGeom 
+
 import jax
 import time
 
