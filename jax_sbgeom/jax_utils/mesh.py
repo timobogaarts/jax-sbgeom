@@ -41,6 +41,13 @@ def mesh_to_pyvista_mesh(pts, conn = None):
         cells = cells.flatten()
         mesh = pv.UnstructuredGrid(cells, onp.full(conn_onp.shape[0], 10), points_onp)
         return mesh
+    elif conn.shape[-1] ==2:
+        points_onp = onp.array(pts)
+        conn_onp   = onp.array(conn)
+        lines = onp.hstack([onp.full((conn_onp.shape[0], 1), 2), conn_onp]).astype(onp.int64)
+        lines = lines.flatten()
+        mesh = pv.PolyData(points_onp, lines=lines)
+        return mesh
     else:
         raise ValueError("Connectivity must be triangles or tetrahedra")
     
