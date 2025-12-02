@@ -461,6 +461,60 @@ def _mesh_surfaces_closed(flux_surfaces: FluxSurface,
     points       = _mesh_surfaces_closed_points(flux_surfaces, s_values_start, s_value_end, include_axis, phi_start, phi_end, full_angle, n_theta, n_phi, n_cap)
     return points, connectivity
 
+@partial(jax.jit, static_argnums= (0,1,2))
+def _mesh_poloidal_connectivity(n_layers : int, n_theta : int, include_axis : bool):
+    
+    if not include_axis:        
+        return _build_closed_strips(n_theta, jnp.arange(n_layers - 1) * n_theta, (jnp.arange(n_layers - 1) +  1) * n_theta, True, 1,1).reshape(-1,3)
+    else:
+        closed_strips = _build_closed_strips(n_theta, jnp.arange(n_layers-2) * n_theta, (jnp.arange(n_layers - 2) + 1) * n_theta, True, 1,1).reshape(-1,3) + 1 # axis point
+        axis_wedge = _build_closed_wedges(n_theta, 0, 1, True, 1)
+        return jnp.concatenate([axis_wedge, closed_strips])
+
+@partial(jax.jit, static_argnums = (2,3,4))
+def _mesh_poloidal_points(flux_surfaces : FluxSurface, s_layers : jnp.ndarray, phi : float, n_theta : int, include_axis : bool):        
+    if not include_axis:        
+        theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)    
+        s_mg, theta_mg  = jnp.meshgrid(s_layers, theta, indexing='ij')
+        positions_no_axis = flux_surfaces.cartesian_position(s_mg, theta_mg, phi).reshape(-1,3)
+        return positions_no_axis
+    else:
+        theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)    
+        s_mg, theta_mg  = jnp.meshgrid(s_layers[1:], theta, indexing='ij')
+        positions_no_axis = flux_surfaces.cartesian_position(s_mg, theta_mg, phi).reshape(-1,3)
+        return jnp.concatenate([flux_surfaces.cartesian_position(0.0, 0.0, phi)[None, :], positions_no_axis], axis=0)
+
+    
+def mesh_poloidal_plane(flux_surface : FluxSurface, s_layers : jnp.ndarray, phi : float, n_theta : int):
+    '''
+    Mesh a poloidal plane of a flux surface at the given s_layers and toroidal angle phi with n_theta poloidal points.
+
+    Vertices are ordered first axis if present (s[0]==0), then increasing theta, then increasing s.
+
+    Connectivity is ordered first axis wedges if present, then each closed theta strip, then increasing s.
+
+    Parameters:
+    flux_surface : FluxSurface
+        The flux surface object containing the parameterization.
+    s_layers : jnp.ndarray
+        The normalized radii of the flux surfaces to mesh. Shape (n_layers,)
+    phi : float
+        The toroidal angle (in radians) at which to mesh the poloidal plane.
+    n_theta : int
+        The number of poloidal points.
+    Returns:
+    -------
+    points : jnp.ndarray    
+        An array of shape (n_points, 3) containing the Cartesian coordinates of the mesh points.
+    connectivity : jnp.ndarray
+        An array of shape (n_triangles, 3) containing the indices of the vertices for each triangle.
+    '''
+
+    include_axis = bool(s_layers[0] == 0.0) 
+    points = _mesh_poloidal_points(flux_surface, s_layers, phi, n_theta, include_axis)
+    connectivity = _mesh_poloidal_connectivity(s_layers.shape[0], n_theta, include_axis)
+    return points, connectivity
+
 @partial(jax.jit, static_argnums= (0,1,2,3))
 def _mesh_watertight_layers_connectivity(n_layers : int, full_angle : bool,  n_theta : int, n_phi : int):
 
