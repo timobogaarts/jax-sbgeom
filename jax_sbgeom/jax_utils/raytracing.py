@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from typing import Type
 from dataclasses import dataclass
+from functools import partial
 
 def _get_norm_centroids(positions : jnp.ndarray, connectivity : jnp.ndarray) -> jnp.ndarray:
     '''
@@ -389,8 +390,8 @@ points_in_aabb    = jax.vmap(_point_in_aabb, in_axes=(0, None))
 
 points_in_aabbvec = jax.vmap(_point_in_aabb, in_axes=(0, 0))
 
-@jax.jit
-def probe_bvh(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_hit_size : int = 64):
+@partial(jax.jit, static_argnums = (2,3))
+def _probe_bvh_imp(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_hit_size : int = 64):
     '''
     Probe a BVH with a set of points to find which AABBs contain the points.
 
@@ -490,6 +491,30 @@ def probe_bvh(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_hit_si
 
     return final_hits, n_loops
 
+def probe_bvh(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_hit_size : int = 64):
+    '''
+    Probe a BVH with a set of points to find which AABBs contain the points.
+
+    Parameters:
+    -----------
+    bvh : BVH
+        The BVH to probe.
+    points : jnp.ndarray
+        The points to probe the BVH with. Shape (N_points, 3)
+    stack_size : int
+        The size of the stack to use for traversal.
+    max_hit_size : int
+        The maximum number of hits to record per point.
+    Returns:
+    -----------
+    jnp.ndarray
+        An array of shape (N_points, max_hit_size) containing the indices of the AABBs of the original mesh. (not in the BVH order, but in the original order)
+        In other words, bvh.order is indexed by the resulting output of _probe_bvh_imp. If no hit, -1 is returned.
+
+    
+    '''    
+    final_hits, n_loops = _probe_bvh_imp(bvh, points, stack_size, max_hit_size)
+    return jnp.where(final_hits >=0, bvh.order[final_hits], -1)##[:,0]  #[hit_i[hit_i >=0] for hit_i in final_hits] if we want variable length outputs
 def ray_intersects_aabb(origin : jnp.ndarray, direction : jnp.ndarray, aabb : jnp.ndarray):
     '''
     Vectorized function to check ray-AABB intersections using the slab method.

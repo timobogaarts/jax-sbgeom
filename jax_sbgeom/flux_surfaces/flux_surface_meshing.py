@@ -84,6 +84,9 @@ def _build_closed_strip(n_strip : int, offset_index_0 : int, offset_index_1 : in
     triangles = jnp.stack([tri1, tri2],axis=-2) # last axis is vertices, second last is triangle index (0 or 1)    
     return triangles
 
+def _build_open_strip(n_strip : int, offset_index_0 : int, offset_index_1 : int, normals_orientation : bool, stride_0: int, stride_1 : int):
+    return _build_closed_strip(n_strip, offset_index_0, offset_index_1, normals_orientation, stride_0, stride_1)[:-1, ...]
+
 @partial(jax.jit, static_argnums = (0))
 def _build_closed_wedges(n_wedge : int, offset_index_0 : int, offset_index_1 : int, normals_orientation : bool, stride_1):
     '''
@@ -128,6 +131,7 @@ def _build_closed_wedges(n_wedge : int, offset_index_0 : int, offset_index_1 : i
 
 
 _build_closed_strips = jax.vmap(_build_closed_strip, in_axes=(None,0,0,None, None, None))
+_build_open_strips   = jax.vmap(_build_open_strip,   in_axes=(None,0,0,None, None, None))
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #                                                                        Single Surface Meshing 
@@ -137,6 +141,13 @@ _build_closed_strips = jax.vmap(_build_closed_strip, in_axes=(None,0,0,None, Non
 def _build_triangles_surface(n_theta : int, theta_blocks : int, n_phi : int, phi_blocks : int, normals_orientation : bool):
     '''
     Build the triangle connectivity for a surface mesh given the number of poloidal and toroidal points/blocks.
+
+    Assumes the points are ordered implicitly as:
+        [n_theta, n_phi, ndim] (reshaped to [-1, ndim])
+
+    Builds triangles in increasing second dimension first.
+    In other words, we have the following [implicit] shape:
+        [phi_blocks, theta_blocks, 2, 3] (2 is from 2 triangles per quad, 3 is from 3 vertices per triangle)
 
     Parameters
     ----------
@@ -159,7 +170,7 @@ def _build_triangles_surface(n_theta : int, theta_blocks : int, n_phi : int, phi
 
     # Points are ordered with phi first, then theta
     # Therefore, given a particular strip:
-    # - Starting index of strip i in phi direction is i * n_phi
+    # - Starting index of strip i in theta direction is i * n_phi
     # - Starting index of next strip is i * n_phi + n_theta
     # - Stride between points in strip is n_phi
     # - Stride between points in next strip is n_phi
@@ -168,6 +179,37 @@ def _build_triangles_surface(n_theta : int, theta_blocks : int, n_phi : int, phi
     # Since phi_blocks can be n_phi or n_phi - 1, we build the arrays of starting indices first
     
     triangles_shaped = _build_closed_strips(n_theta, jnp.arange(phi_blocks), (jnp.arange(phi_blocks) +  1) % n_phi, normals_orientation, n_phi,n_phi)
+    return jnp.moveaxis(triangles_shaped, 0,1).reshape(-1,3) # Move triangle index to first axis so we have triangle order first in phi.
+
+
+def _build_open_triangle_surface(n_theta : int, n_phi :int, normals_orientation : bool):
+    '''
+    Build the triangle connectivity for an open surface mesh given the number of poloidal and toroidal points.
+    Note that the triangles are built in increasing second dimension first. 
+    
+    Assumed is that the points are ordered with the implicit ordering:
+       [n_theta, n_phi, ndim] (reshaped to [-1, ndim])
+       
+    
+    In other words, we have the following [implicit] shape:
+        [n_phi-1, n_theta - 1, 2, 3] (2 is from 2 triangles per quad, 3 is from 3 vertices per triangle)
+
+    n_triangles is thus 2 * (n_phi - 1) * (n_theta - 1)
+
+    Parameters
+    ----------
+    n_theta : int
+        The number of poloidal points.  
+    n_phi : int 
+        The number of toroidal points.
+    normals_orientation : bool
+        Whether the normals should face outwards (right-hand rule).
+    Returns
+    -------
+    triangles : jnp.ndarray [n_triangles = 2* (n_phi - 1) * (n_theta - 1), 3]
+        An array of shape  containing the indices of the vertices for each triangle.
+    '''
+    triangles_shaped = _build_open_strips(n_theta, jnp.arange(n_phi -1), jnp.arange(1, n_phi), normals_orientation, n_phi, n_phi)    
     return jnp.moveaxis(triangles_shaped, 0,1).reshape(-1,3) # Move triangle index to first axis so we have triangle order first in phi.
 
 
@@ -641,6 +683,38 @@ def _tetrahedral_closed_strip(n_strip : int, offset_index_0 : int, offset_index_
     
     return vertices
 
+def _tetrahedral_open_strip(n_strip : int, offset_index_0 : int, offset_index_1 : int, offset_index_2 : int, offset_index_3 : int, volume_orientation : bool, stride_0 : int, stride_1: int, stride_2 : int, stride_3 : int):
+    return _tetrahedral_closed_strip(n_strip, offset_index_0, offset_index_1, offset_index_2, offset_index_3, volume_orientation, stride_0, stride_1, stride_2, stride_3)[:-1, ...] # remove last strip which would wrap around
+
+_tetrahedral_open_strip_vmap = jax.jit(jax.vmap(_tetrahedral_open_strip, in_axes=(None,0,0,0,0,None,None,None,None,None), out_axes=0), static_argnums=(0))
+
+def _tetrahedral_open_cube(n_x : int, n_y : int, n_z : int):
+    '''
+    Creates a tetrahedral mesh of an open cube with n_x, n_y, n_z points in each direction.
+
+    Assumes the points have implicit ordering:
+        [n_x, n_y, n_z]
+
+    The resulting tetrahedra are implicitly ordered as:
+        [n_z -1, n_y -1, n_x -1, 6, 4] where the last two dimensions are the tetrahedron index (0 to 5) and the vertices (0 to 3).
+    
+    Parameters:
+    n_x : int
+        Number of points in x direction.
+    n_y : int
+        Number of points in y direction.
+    n_z : int
+        Number of points in z direction.
+    Returns:
+    -------
+    jnp.ndarray [n_tetrahedra = (n_z - 1) * (n_y -1 ) * (n_x - 1) * 6,  4]
+        An array containing the tetrahedral connectivity.        
+    '''    
+    def layer_iteration(j):
+        arange_nz = jnp.arange(n_z - 1) + j * n_z
+        return _tetrahedral_open_strip_vmap(n_x, arange_nz, 1 + arange_nz, n_z + arange_nz, n_z + 1 + arange_nz, True,  n_y * n_z, n_y * n_z, n_y * n_z, n_y * n_z)    
+    result =  jax.vmap(layer_iteration, in_axes=0)(jnp.arange(n_y - 1))        
+    return jnp.moveaxis(result, 0,1).reshape(-1,4)
 
 def _tetrahedral_wedge(n_strip : int, offset_wedge_0 : int, offset_wedge_1 : int, offset_index_0 : int, offset_index_1 : int, volume_orientation : bool, stride_0 : int, stride_1 : int):   
     u_i_block = jnp.arange(n_strip)

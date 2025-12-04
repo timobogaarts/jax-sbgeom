@@ -3,6 +3,7 @@ import pytest
 import jax
 import jax.numpy as jnp 
 import numpy as onp
+jax.config.update("jax_enable_x64", True)
 
 from pathlib import Path
 DATA_INPUT_FLUX_SURFACES = Path(__file__).parent.parent / "data" / "flux_surfaces"
@@ -26,7 +27,7 @@ def test_bvh_probing(data_file):
 
     lbvh         = jsb.jax_utils.raytracing.build_lbvh(surface_mesh[0], surface_mesh[1])
 
-    hits_bvh_probing = jsb.jax_utils.raytracing.probe_bvh(lbvh, surface_mesh[0][0:N_test])[0]
+    hits_bvh_probing = jsb.jax_utils.raytracing._probe_bvh_imp(lbvh, surface_mesh[0][0:N_test])[0]
     
     @jax.jit
     def bulk_all(aabb, points):
