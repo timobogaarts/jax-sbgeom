@@ -189,10 +189,9 @@ def _build_open_triangle_surface(n_theta : int, n_phi :int, normals_orientation 
     
     Assumed is that the points are ordered with the implicit ordering:
        [n_theta, n_phi, ndim] (reshaped to [-1, ndim])
-       
-    
-    In other words, we have the following [implicit] shape:
-        [n_phi-1, n_theta - 1, 2, 3] (2 is from 2 triangles per quad, 3 is from 3 vertices per triangle)
+           
+    We have the following [implicit] shape:
+        [n_theta - 1, n_phi - 1, 2, 3] (2 is from 2 triangles per quad, 3 is from 3 vertices per triangle)
 
     n_triangles is thus 2 * (n_phi - 1) * (n_theta - 1)
 
@@ -209,7 +208,7 @@ def _build_open_triangle_surface(n_theta : int, n_phi :int, normals_orientation 
     triangles : jnp.ndarray [n_triangles = 2* (n_phi - 1) * (n_theta - 1), 3]
         An array of shape  containing the indices of the vertices for each triangle.
     '''
-    triangles_shaped = _build_open_strips(n_theta, jnp.arange(n_phi -1), jnp.arange(1, n_phi), normals_orientation, n_phi, n_phi)    
+    triangles_shaped = _build_open_strips(n_theta, jnp.arange(n_phi -1), jnp.arange(1, n_phi), normals_orientation, n_phi, n_phi)        
     return jnp.moveaxis(triangles_shaped, 0,1).reshape(-1,3) # Move triangle index to first axis so we have triangle order first in phi.
 
 
@@ -696,7 +695,7 @@ def _tetrahedral_open_cube(n_x : int, n_y : int, n_z : int):
         [n_x, n_y, n_z]
 
     The resulting tetrahedra are implicitly ordered as:
-        [n_z -1, n_y -1, n_x -1, 6, 4] where the last two dimensions are the tetrahedron index (0 to 5) and the vertices (0 to 3).
+        [n_x -1, n_y -1, n_z -1, 6, 4] where the last two dimensions are the tetrahedron index (0 to 5) and the vertices (0 to 3).
     
     Parameters:
     n_x : int
@@ -713,8 +712,9 @@ def _tetrahedral_open_cube(n_x : int, n_y : int, n_z : int):
     def layer_iteration(j):
         arange_nz = jnp.arange(n_z - 1) + j * n_z
         return _tetrahedral_open_strip_vmap(n_x, arange_nz, 1 + arange_nz, n_z + arange_nz, n_z + 1 + arange_nz, True,  n_y * n_z, n_y * n_z, n_y * n_z, n_y * n_z)    
-    result =  jax.vmap(layer_iteration, in_axes=0)(jnp.arange(n_y - 1))        
-    return jnp.moveaxis(result, 0,1).reshape(-1,4)
+    result =  jax.vmap(layer_iteration, in_axes=0)(jnp.arange(n_y - 1))     #[n_y -1, n_z -1, n_x -1, 6, 4]    
+    result_rs = jnp.moveaxis(result, 2,0)    
+    return result_rs.reshape(-1,4)
 
 def _tetrahedral_wedge(n_strip : int, offset_wedge_0 : int, offset_wedge_1 : int, offset_index_0 : int, offset_index_1 : int, volume_orientation : bool, stride_0 : int, stride_1 : int):   
     u_i_block = jnp.arange(n_strip)
