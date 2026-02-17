@@ -511,6 +511,18 @@ def _mesh_poloidal_connectivity(n_layers : int, n_theta : int, include_axis : bo
         closed_strips = _build_closed_strips(n_theta, jnp.arange(n_layers-2) * n_theta, (jnp.arange(n_layers - 2) + 1) * n_theta, True, 1,1).reshape(-1,3) + 1 # axis point
         axis_wedge = _build_closed_wedges(n_theta, 0, 1, True, 1)
         return jnp.concatenate([axis_wedge, closed_strips])
+    
+@partial(jax.jit, static_argnums = (2,3,4))
+def _mesh_poloidal_points_coordinates(flux_surfaces : FluxSurface, s_layers : jnp.ndarray, phi : float, n_theta : int, include_axis : bool):        
+    if not include_axis:        
+        theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)    
+        s_mg, theta_mg  = jnp.meshgrid(s_layers, theta, indexing='ij')
+        return s_mg.reshape(-1), theta_mg.reshape(-1), phi * jnp.ones(s_mg.size)        
+    else:
+        theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)    
+        s_mg, theta_mg  = jnp.meshgrid(s_layers[1:], theta, indexing='ij')
+        positions_no_axis = flux_surfaces.cartesian_position(s_mg, theta_mg, phi).reshape(-1,3)
+        return jnp.concatenate([jnp.array([0.0]), s_mg.reshape(-1)]), jnp.concatenate([jnp.array([0.0]), theta_mg.reshape(-1)]), jnp.concatenate([jnp.array([phi]), jnp.ones(positions_no_axis.size) * phi])        
 
 @partial(jax.jit, static_argnums = (2,3,4))
 def _mesh_poloidal_points(flux_surfaces : FluxSurface, s_layers : jnp.ndarray, phi : float, n_theta : int, include_axis : bool):        
@@ -895,6 +907,22 @@ def _mesh_tetrahedra_points(flux_surfaces, s_layers, include_axis : bool,  phi_s
         surface_points = flux_surfaces.cartesian_position(s_mg_layers, theta_mg_layers, phi_mg_layers).reshape(-1,3)
         return surface_points
 
+def _mesh_tetrahedra_points_coordinates(flux_surfaces, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+
+    assert s_layers.shape[0] >= 2, "At least two layers are required to create a tetrahedral mesh. Only {} were provided.".format(s_layers.shape[0])
+        
+    theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
+    phi   = jax.lax.cond(full_angle,    lambda _ : jnp.linspace(phi_start, phi_end, n_phi, endpoint=False),
+                                        lambda _ :jnp.linspace(phi_start, phi_end, n_phi, endpoint=True),
+                                        operand = None)
+    if include_axis:        
+        s_mg_layers, theta_mg_layers, phi_mg_layers = jnp.meshgrid(s_layers[1:], theta, phi, indexing='ij')
+        axis_s_theta = jnp.zeros(n_phi)
+        return jnp.concatenate([axis_s_theta, s_mg_layers.ravel()]), jnp.concatenate([axis_s_theta, theta_mg_layers.ravel()]), jnp.concatenate([phi, phi_mg_layers.ravel()])
+    else:
+        s_mg_layers, theta_mg_layers, phi_mg_layers = jnp.meshgrid(s_layers, theta, phi, indexing='ij')
+        
+        return s_mg_layers, theta_mg_layers, phi_mg_layers
 
 @partial(jax.jit, static_argnums=(2, 5, 6, 7))
 def _mesh_tetrahedra(flux_surfaces, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
