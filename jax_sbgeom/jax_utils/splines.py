@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 from dataclasses import dataclass
+import equinox as eqx
 
 @partial(jax.jit, static_argnums = (3,))
 def _cox_de_boor(x : jnp.ndarray, t : jnp.ndarray, i : int, k : int) -> jnp.ndarray:
@@ -226,3 +227,86 @@ def periodic_interpolating_spline(x,y, k : int):
     return BSpline(*_fit_periodic_interpolating_spline_vec(x,y, k), k)
 
     
+#=======================================================================
+# BSpline for paramatrization
+#=======================================================================
+def make_periodic_knots(n: int, k: int) -> jnp.ndarray:
+    """
+    Build a periodic knot vector for n control points, degree k,
+    on the domain [0, 2*pi).
+    
+    Parameters
+    ----------
+    n : int
+        Number of control points.
+    k : int
+        Degree of the B-spline.
+    
+    Returns
+    ------- 
+    jnp.ndarray [n + 2*k + 1]
+        Knot vector for periodic B-spline interpolation.
+    """    
+    base = jnp.linspace(0, 2 * jnp.pi, n + 1)  # n+1 pts, spacing = 2pi/n
+    # prepend k knots by wrapping backward
+    left  = base[-k-1:-1] - 2 * jnp.pi   # k knots < 0
+    # append k knots by wrapping forward  
+    right = base[1:k+1]   + 2 * jnp.pi   # k knots > 2pi    
+    return jnp.concatenate([left, base, right])
+
+def make_periodic_coeffs(c: jnp.ndarray, k: int) -> jnp.ndarray:
+    """
+    Extend n coefficients to n+k by wrapping the first k,
+    enforcing periodicity.
+
+    Parameters
+    ----------
+    c : jnp.ndarray [n]
+        Coefficients of the B-spline basis functions.
+    k : int
+        Degree of the B-spline.
+    
+    Returns
+    -------
+    jnp.ndarray [n + k]
+        Extended coefficients for periodic B-spline interpolation.
+    """
+    return jnp.concatenate([c, c[:k]])
+
+@eqx.filter_jit
+def periodic_bspline(theta: jnp.ndarray, c: jnp.ndarray, k: int, derivative: int = 0):
+    """
+    Function to evaluate a periodic B-spline at angles theta given coefficients c and degree k.
+
+    Note that the coefficients c are the free parameters, which do not map directly to a control point
+    given by their index. Use :func`greville_abscissa_periodic_bspline` to compute the control points location.
+    
+    Parameters
+    ----------
+    theta : jnp.ndarray [M]
+        Angles at which to evaluate the B-spline, in radians.
+    c : jnp.ndarray [n]
+        Coefficients of the B-spline basis functions. Must have length n, which is the number of free parameters. Internally extended to n+k for periodicity.
+    k : int
+        Degree of the B-spline.
+    derivative : int, optional
+        Order of the derivative to compute. Default is 0 (the function itself).
+
+    Returns
+    -------
+    jnp.ndarray [M]
+        Values of the periodic B-spline (or its derivative) at the angles theta.
+    
+    """
+    n = c.shape[0]
+    t = make_periodic_knots(n, k)        # [n + 2k + 1]
+    c_ext = make_periodic_coeffs(c, k)   # [n + k] (= (n+2k+1) - k - 1  required for bspline)
+    theta_wrapped = jnp.mod(theta, 2 * jnp.pi)
+    return bspline(theta_wrapped, t, c_ext, k, derivative)
+
+@eqx.filter_jit
+def greville_abscissa_periodic_bspline(n : int, k: int) -> jnp.ndarray: 
+    
+    t = make_periodic_knots(n, k)        # [n + 2k + 1]
+    theta_ctrl = jnp.array([jnp.mean(t[i:i+k+2]) for i in range(n)])  # [n]
+    return jnp.mod(theta_ctrl, 2 * jnp.pi)
