@@ -129,10 +129,10 @@ class FluxSurfaceFourierExtended(FluxSurface):
         return _fourier_extended_cylindrical_position(self, self.extension_flux_surface, s, theta, phi)
     
     def normal(self, s, theta, phi):
-        return _fourier_extended_normal(self, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
+        return _fourier_extended_normal(self, self.extension_flux_surface, s, theta, phi)
     
     def principal_curvatures(self, s, theta, phi):
-        return _fourier_extended_principal_curvatures(self, self.extension_flux_surface.data, self.extension_flux_surface.settings, s, theta, phi)
+        return _fourier_extended_principal_curvatures(self, self.extension_flux_surface, s, theta, phi)
 
 # ===================================================================================================================================================================================
 #                                                                           Normal Extended
