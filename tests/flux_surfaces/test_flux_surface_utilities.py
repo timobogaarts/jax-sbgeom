@@ -58,3 +58,46 @@ def test_cws_ray_tracing(data_file):
     cws_mesh, fs_jax =_get_cws_and_flux_surface(data_file)
     check_cws_ray_tracing(cws_mesh, fs_jax)
     
+
+@pytest.mark.parametrize("data_file", DATA_INPUT_FLUX_SURFACES.glob("*_input.h5"))
+def test_half_to_full_module_conversion(data_file):
+    '''
+    This test ensures the conversion of full and half module meshes work. It test by
+    
+    1. Generating a half module mesh and a full module mesh using the mesh_surface function, and then converting the half module mesh to a full module mesh using the convert_half_module_points_to_full_module function. The resulting full module mesh is then compared to the original full module mesh to ensure they are the same.
+    2. If the number of field periods is greater than 4, we also test the convert_full_module_points_multiple_full_module function by generating a mesh for a toroidal extent that covers one before and two after the full module, and comparing it to the result of converting the half module mesh to a full module mesh and then extending it by one full module in both directions.
+    3. We also test the convert_full_module_points_multiple_full_module function by generating a mesh for a toroidal extent that covers zero before and one after the full module, and comparing it to the result of converting the half module mesh to a full module mesh and then extending it by one full module in the positive direction.
+    4. We also test the convert_full_module_points_multiple_full_module function by generating a mesh for a toroidal extent that covers one before and zero after the full module, and comparing it to the result of converting the half module mesh to a full module mesh and then extending it by one full module in the negative direction.
+
+    '''
+    fs_jax = jsb.flux_surfaces.FluxSurfaceNormalExtendedNoPhi.from_hdf5(data_file)
+
+    half_module = jsb.flux_surfaces.ToroidalExtent.half_module(fs_jax)
+    full_module = jsb.flux_surfaces.ToroidalExtent.full_module(fs_jax)
+
+    n_theta = 20
+    n_phi   = 14
+
+    half_module_surface = jsb.flux_surfaces.mesh_surface(fs_jax, 1.0, half_module, n_theta, n_phi, True)
+    full_module_surface = jsb.flux_surfaces.mesh_surface(fs_jax, 1.0, full_module, n_theta, 2 * n_phi - 1, True)
+    points_half_mod = jsb.flux_surfaces.flux_surfaces_utilities.convert_half_module_points_to_full_module(half_module_surface[0].reshape(n_theta, n_phi, 3))
+    onp.testing.assert_allclose(full_module_surface[0], points_half_mod.reshape(-1,3), atol=1e-10, rtol = 1e-10)
+
+    
+    if fs_jax.settings.nfp > 4:
+        one_two_half_module_surface      = jsb.flux_surfaces.ToroidalExtent(- 2 * jnp.pi / fs_jax.settings.nfp, 2 * jnp.pi / fs_jax.settings.nfp * 3)
+        one_two_half_module_surface_mesh = jsb.flux_surfaces.mesh_surface(fs_jax, 1.0, one_two_half_module_surface, n_theta,  (2 * n_phi - 1) + 3 *(2 * n_phi - 2), True)
+
+        points_extended = jsb.flux_surfaces.flux_surfaces_utilities.convert_full_module_points_multiple_full_module(points_half_mod, full_module, 1, 2)
+
+        onp.testing.assert_allclose(one_two_half_module_surface_mesh[0], points_extended.reshape(-1,3), atol=1e-10, rtol = 1e-10)
+
+    one_before_one_half_module_surface      = jsb.flux_surfaces.ToroidalExtent(- 2 * jnp.pi / fs_jax.settings.nfp, 2 * jnp.pi / fs_jax.settings.nfp)
+    one_before_one_half_module_surface_mesh = jsb.flux_surfaces.mesh_surface(fs_jax, 1.0, one_before_one_half_module_surface, n_theta,  (2 * n_phi - 1) + 1 * (2 * n_phi - 2), True)
+    points_extended = jsb.flux_surfaces.flux_surfaces_utilities.convert_full_module_points_multiple_full_module(points_half_mod, full_module, 1, 0)
+    onp.testing.assert_allclose(one_before_one_half_module_surface_mesh[0], points_extended.reshape(-1,3), atol=1e-10, rtol = 1e-10)
+
+    one_before_one_half_module_surface      = jsb.flux_surfaces.ToroidalExtent(0, 2 * 2 * jnp.pi / fs_jax.settings.nfp)
+    one_before_one_half_module_surface_mesh = jsb.flux_surfaces.mesh_surface(fs_jax, 1.0, one_before_one_half_module_surface, n_theta,  (2 * n_phi - 1) + 1 * (2 * n_phi - 2), True)
+    points_extended = jsb.flux_surfaces.flux_surfaces_utilities.convert_full_module_points_multiple_full_module(points_half_mod, full_module, 0, 1)
+    onp.testing.assert_allclose(one_before_one_half_module_surface_mesh[0], points_extended.reshape(-1,3), atol=1e-10, rtol = 1e-10)

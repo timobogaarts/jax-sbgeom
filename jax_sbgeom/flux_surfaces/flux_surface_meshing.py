@@ -3,7 +3,7 @@ from .flux_surfaces_base import FluxSurface, FluxSurfaceSettings, ToroidalExtent
 import jax
 import jax.numpy as jnp
 from functools import partial
-
+import equinox as eqx
 from typing import List
 # ===================================================================================================================================================================================
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1109,4 +1109,3 @@ def mesh_watertight_layers(flux_surfaces : FluxSurface, s_values : jnp.ndarray, 
     '''
     return _mesh_watertight_layers(flux_surfaces, s_values, *toroidal_extent, n_theta, n_phi)
 
-    
