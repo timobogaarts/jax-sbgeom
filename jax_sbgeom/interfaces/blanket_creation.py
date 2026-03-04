@@ -160,6 +160,8 @@ def mesh_tetrahedral_blanket(flux_surface : FluxSurface, blanket : LayeredDiscre
     Then, the first external layer is placed immediately afterwards. Therefore, the total number of element layers until the first external layer is resolution_layers[0].
     The number of elements in the first external layer is resolution_layers[1], and so on.
 
+    It does not use the blanket.d_layers data: it assumes the flux surface is already transformed such that s = 2.0 is equal to the first layer.
+
     Parameters
     ----------
     blanket : LayeredDiscreteBlanket

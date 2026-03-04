@@ -1,10 +1,11 @@
-from .flux_surfaces_base import FluxSurface, FluxSurfaceSettings, ToroidalExtent
+from .flux_surfaces_base import FluxSurface, FluxSurfaceSettings, ToroidalExtent, ParametrisedSurface
 
 import jax
 import jax.numpy as jnp
 from functools import partial
 import equinox as eqx
 from typing import List
+
 # ===================================================================================================================================================================================
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #                                                                           Triangle Meshing
@@ -212,15 +213,15 @@ def _build_open_triangle_surface(n_theta : int, n_phi :int, normals_orientation 
     return jnp.moveaxis(triangles_shaped, 0,1).reshape(-1,3) # Move triangle index to first axis so we have triangle order first in phi.
 
 
-def _mesh_surface_points(flux_surfaces : FluxSurface, s : float, phi_start : float, phi_end : bool, full_angle : bool,  n_theta : int, n_phi : int):
+def _mesh_surface_points(flux_surfaces : ParametrisedSurface, s : float, phi_start : float, phi_end : bool, full_angle : bool,  n_theta : int, n_phi : int):
     '''
     Obtain the mesh points on a flux surface at normalized radius s with n_theta poloidal and n_phi toroidal points
     Full angle defines whether the end point is included.
 
     Parameters
     ----------
-    flux_surfaces : FluxSurface
-        The flux surface object containing the parameterization.
+    flux_surfaces : ParametrisedSurface
+        The parametrized  surface object containing the parameterization.
     s : float
         The normalized radius of the flux surface to mesh.
     phi_start : float
@@ -275,7 +276,7 @@ def _mesh_surface_connectivity(n_theta : int, n_phi : int, full_angle : bool, no
 _mesh_surface_connectivity_multiple = jax.jit(jax.vmap(_mesh_surface_connectivity, in_axes=(None,None,None,0)), static_argnums=(0,1,2))
 
 @partial(jax.jit, static_argnums = (4,5,6))
-def _mesh_surface(flux_surfaces : FluxSurface, s : float, phi_start : float, phi_end : bool, full_angle : bool,  n_theta : int, n_phi : int, normals_facing_outwards  : bool):
+def _mesh_surface(flux_surfaces : ParametrisedSurface, s : float, phi_start : float, phi_end : bool, full_angle : bool,  n_theta : int, n_phi : int, normals_facing_outwards  : bool):
     '''
     Mesh a flux surface at normalized radius s with n_theta poloidal and n_phi toroidal points.
 
@@ -290,8 +291,8 @@ def _mesh_surface(flux_surfaces : FluxSurface, s : float, phi_start : float, phi
 
     Parameters
     ----------
-    flux_surfaces : FluxSurface
-        The flux surface object containing the parameterization.
+    flux_surfaces : ParametrisedSurface
+        The parametrized surface object containing the parameterization.
     s : float
         The normalized radius of the flux surface to mesh.
     phi_start : float
@@ -409,7 +410,7 @@ def _mesh_surfaces_closed_connectivity(include_axis : bool, full_angle : bool, n
         return 0
     
 @partial(jax.jit, static_argnums= (3, 6, 7,8,9))
-def _mesh_surfaces_closed_points(flux_surfaces: FluxSurface,
+def _mesh_surfaces_closed_points(flux_surfaces: ParametrisedSurface,
                                  s_values_start : float, s_value_end : float, include_axis : bool,
                                  phi_start : float, phi_end : float, full_angle : bool,
                                  n_theta : int, n_phi : int, n_cap : int):
@@ -460,7 +461,7 @@ def _mesh_surfaces_closed_points(flux_surfaces: FluxSurface,
             return 0
 
 @partial(jax.jit, static_argnums= (3, 6, 7,8,9))
-def _mesh_surfaces_closed(flux_surfaces: FluxSurface,
+def _mesh_surfaces_closed(flux_surfaces: ParametrisedSurface,
                           s_values_start : float, s_value_end : float, include_axis : bool,
                           phi_start : float, phi_end : float, full_angle : bool,
                           n_theta : int, n_phi : int, n_cap : int):
@@ -471,8 +472,8 @@ def _mesh_surfaces_closed(flux_surfaces: FluxSurface,
 
     Parameters:
     ----------
-    flux_surfaces : FluxSurface
-        The flux surface object containing the parameterization.
+    flux_surfaces : ParametrisedSurface
+        The parametrized surface object containing the parameterization.
     s_values_start : float
         The normalized radius of the inner flux surface to mesh.    
     s_value_end : float
@@ -513,7 +514,7 @@ def _mesh_poloidal_connectivity(n_layers : int, n_theta : int, include_axis : bo
         return jnp.concatenate([axis_wedge, closed_strips])
     
 @partial(jax.jit, static_argnums = (2,3,4))
-def _mesh_poloidal_points_coordinates(flux_surfaces : FluxSurface, s_layers : jnp.ndarray, phi : float, n_theta : int, include_axis : bool):        
+def _mesh_poloidal_points_coordinates(flux_surfaces : ParametrisedSurface, s_layers : jnp.ndarray, phi : float, n_theta : int, include_axis : bool):        
     if not include_axis:        
         theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)    
         s_mg, theta_mg  = jnp.meshgrid(s_layers, theta, indexing='ij')
@@ -525,7 +526,7 @@ def _mesh_poloidal_points_coordinates(flux_surfaces : FluxSurface, s_layers : jn
         return jnp.concatenate([jnp.array([0.0]), s_mg.reshape(-1)]), jnp.concatenate([jnp.array([0.0]), theta_mg.reshape(-1)]), jnp.concatenate([jnp.array([phi]), jnp.ones(positions_no_axis.size) * phi])        
 
 @partial(jax.jit, static_argnums = (2,3,4))
-def _mesh_poloidal_points(flux_surfaces : FluxSurface, s_layers : jnp.ndarray, phi : float, n_theta : int, include_axis : bool):        
+def _mesh_poloidal_points(flux_surfaces : ParametrisedSurface, s_layers : jnp.ndarray, phi : float, n_theta : int, include_axis : bool):        
     if not include_axis:        
         theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)    
         s_mg, theta_mg  = jnp.meshgrid(s_layers, theta, indexing='ij')
@@ -538,7 +539,7 @@ def _mesh_poloidal_points(flux_surfaces : FluxSurface, s_layers : jnp.ndarray, p
         return jnp.concatenate([flux_surfaces.cartesian_position(0.0, 0.0, phi)[None, :], positions_no_axis], axis=0)
 
     
-def mesh_poloidal_plane(flux_surface : FluxSurface, s_layers : jnp.ndarray, phi : float, n_theta : int):
+def mesh_poloidal_plane(flux_surface : ParametrisedSurface, s_layers : jnp.ndarray, phi : float, n_theta : int):
     '''
     Mesh a poloidal plane of a flux surface at the given s_layers and toroidal angle phi with n_theta poloidal points.
 
@@ -547,8 +548,8 @@ def mesh_poloidal_plane(flux_surface : FluxSurface, s_layers : jnp.ndarray, phi 
     Connectivity is ordered first axis wedges if present, then each closed theta strip, then increasing s.
 
     Parameters:
-    flux_surface : FluxSurface
-        The flux surface object containing the parameterization.
+    flux_surface : ParametrisedSurface
+        The parametrized surface object containing the parameterization.
     s_layers : jnp.ndarray
         The normalized radii of the flux surfaces to mesh. Shape (n_layers,)
     phi : float
@@ -610,19 +611,19 @@ def _mesh_watertight_layers_connectivity(n_layers : int, full_angle : bool,  n_t
         return total_array
 
 @partial(jax.jit, static_argnums = (4,5,6))
-def _mesh_watertight_layers_points(flux_surfaces : FluxSurface, s_values : jnp.ndarray, phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+def _mesh_watertight_layers_points(flux_surfaces : ParametrisedSurface, s_values : jnp.ndarray, phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
     multiple_surface_points         =  _mesh_surface_points_multiple(flux_surfaces, s_values, phi_start, phi_end, full_angle, n_theta, n_phi)
     return jnp.concatenate(multiple_surface_points, axis=0)
 
 @partial(jax.jit, static_argnums= (4,5,6))
-def _mesh_watertight_layers(flux_surfaces : FluxSurface, s_values : jnp.ndarray, phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+def _mesh_watertight_layers(flux_surfaces : ParametrisedSurface, s_values : jnp.ndarray, phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
     '''
     Mesh watertight flux surface layers at the given s_values with n_theta poloidal and n_phi toroidal points.
 
     Parameters:
     ----------
-    flux_surfaces : FluxSurface
-        The flux surface object containing the parameterization.
+    flux_surfaces : ParametrisedSurface
+        The parametrized surface object containing the parameterization.
     s_values : jnp.ndarray
         The normalized radii of the flux surfaces to mesh. Shape (n_layers,)
     phi_start : float
@@ -888,7 +889,7 @@ def _mesh_tetrahedra_connectivity(n_layers : int, include_axis : bool, full_angl
         return total_connectivity
 
 @partial(jax.jit, static_argnums=(2,5,6,7))
-def _mesh_tetrahedra_points(flux_surfaces, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+def _mesh_tetrahedra_points(flux_surfaces : ParametrisedSurface, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
 
     assert s_layers.shape[0] >= 2, "At least two layers are required to create a tetrahedral mesh. Only {} were provided.".format(s_layers.shape[0])
         
@@ -907,7 +908,7 @@ def _mesh_tetrahedra_points(flux_surfaces, s_layers, include_axis : bool,  phi_s
         surface_points = flux_surfaces.cartesian_position(s_mg_layers, theta_mg_layers, phi_mg_layers).reshape(-1,3)
         return surface_points
 
-def _mesh_tetrahedra_points_coordinates(flux_surfaces, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+def _mesh_tetrahedra_points_coordinates(flux_surface : ParametrisedSurface, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
 
     assert s_layers.shape[0] >= 2, "At least two layers are required to create a tetrahedral mesh. Only {} were provided.".format(s_layers.shape[0])
         
@@ -925,7 +926,7 @@ def _mesh_tetrahedra_points_coordinates(flux_surfaces, s_layers, include_axis : 
         return s_mg_layers, theta_mg_layers, phi_mg_layers
 
 @partial(jax.jit, static_argnums=(2, 5, 6, 7))
-def _mesh_tetrahedra(flux_surfaces, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+def _mesh_tetrahedra(flux_surfaces : ParametrisedSurface, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
     connectivity = _mesh_tetrahedra_connectivity(len(s_layers), include_axis, full_angle, n_theta, n_phi)
     points       = _mesh_tetrahedra_points(flux_surfaces, s_layers, include_axis, phi_start, phi_end, full_angle, n_theta, n_phi)
     return points, connectivity
@@ -971,7 +972,7 @@ def _volume_of_mesh(positions : jnp.ndarray, connectivity : jnp.ndarray):
 # Similarly, the closed surface meshing function cannot be jitted because of the same reason (plus whether to include the axis or not).
 # Functions should be built on the internal jitted functions above.
 
-def mesh_surface(flux_surfaces: FluxSurface, s : float, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int, normals_facing_outwards : bool = True):
+def mesh_surface(flux_surfaces: ParametrisedSurface, s : float, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int, normals_facing_outwards : bool = True):
     """
     Create a mesh of points on a flux surface at normalized radius s, with n_theta poloidal and n_phi toroidal points.
 
@@ -982,8 +983,8 @@ def mesh_surface(flux_surfaces: FluxSurface, s : float, toroidal_extent : Toroid
 
     Parameters
     ----------
-    flux_surfaces : FluxSurface
-        The flux surface object containing the parameterization.
+    flux_surfaces : ParametrisedSurface
+        The parametrized surface object containing the parameterization.
     s : float
         The normalized radius of the flux surface to mesh.
     toroidal_extent : ToroidalExtent
@@ -1005,7 +1006,7 @@ def mesh_surface(flux_surfaces: FluxSurface, s : float, toroidal_extent : Toroid
 
     return _mesh_surface(flux_surfaces, s, *toroidal_extent, n_theta, n_phi,  normals_facing_outwards)
 
-def mesh_surfaces_closed(flux_surfaces: FluxSurface,
+def mesh_surfaces_closed(flux_surfaces: ParametrisedSurface,
                          s_values_start : float, s_value_end : float,
                          toroidal_extent : ToroidalExtent,
                          n_theta : int, n_phi : int, n_cap : int):
@@ -1019,8 +1020,8 @@ def mesh_surfaces_closed(flux_surfaces: FluxSurface,
 
     Parameters
     ----------
-    flux_surfaces : FluxSurface
-        The flux surface object containing the parameterization.
+    flux_surfaces : ParametrisedSurface
+        The parametrized surface object containing the parameterization.
     s_values_start : float
         The starting normalized radius of the flux surfaces to mesh.
     s_value_end : float
@@ -1046,7 +1047,7 @@ def mesh_surfaces_closed(flux_surfaces: FluxSurface,
     include_axis = s_values_start == 0.0
     return _mesh_surfaces_closed(flux_surfaces, s_values_start, s_value_end, include_axis, *toroidal_extent, n_theta, n_phi, n_cap)
 
-def mesh_tetrahedra(flux_surfaces : FluxSurface, s_values : jnp.ndarray, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int):
+def mesh_tetrahedra(flux_surfaces : ParametrisedSurface, s_values : jnp.ndarray, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int):
     '''
     Create a tetrahedral mesh between layers of flux surfaces at normalized radii s_values, with n_theta poloidal and n_phi toroidal points.
 
@@ -1078,7 +1079,7 @@ def mesh_tetrahedra(flux_surfaces : FluxSurface, s_values : jnp.ndarray, toroida
     include_axis = bool(s_values[0] == 0.0)
     return _mesh_tetrahedra(flux_surfaces, s_values, include_axis, *toroidal_extent, n_theta, n_phi)
 
-def mesh_watertight_layers(flux_surfaces : FluxSurface, s_values : jnp.ndarray, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int):
+def mesh_watertight_layers(flux_surfaces : ParametrisedSurface, s_values : jnp.ndarray, toroidal_extent : ToroidalExtent, n_theta : int, n_phi : int):
     '''
     Create a watertight mesh of points on flux surfaces at normalized radii s_values, with n_theta poloidal and n_phi toroidal points.
 
@@ -1089,8 +1090,8 @@ def mesh_watertight_layers(flux_surfaces : FluxSurface, s_values : jnp.ndarray, 
 
     Parameters
     ----------
-    flux_surfaces : FluxSurface
-        The flux surface object containing the parameterization.
+    flux_surfaces : ParametrisedSurface
+        The parametrized surface object containing the parameterization.
     s_values : jnp.ndarray
         An array of normalized radii of the flux surfaces to mesh.
     toroidal_extent : ToroidalExtent

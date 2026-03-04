@@ -5,14 +5,15 @@ import numpy as onp
 from dataclasses import dataclass
 from jax_sbgeom.jax_utils import stack_jacfwd
 from functools import partial
-from .flux_surfaces_base import FluxSurface, ToroidalExtent, FluxSurfaceSettings, FluxSurfaceData, _data_modes_settings_from_hdf5, _cartesian_to_cylindrical, _principal_curvatures_interpolated, _cylindrical_position_interpolated, _cylindrical_to_cartesian
+from .flux_surfaces_base import FluxSurface, FluxSurfaceBase, ToroidalExtent, FluxSurfaceSettings, FluxSurfaceData, _data_modes_settings_from_hdf5, _cartesian_to_cylindrical, _principal_curvatures_interpolated, _cylindrical_position_interpolated, _cylindrical_to_cartesian
 
 from .flux_surfaces_base import _cartesian_position_interpolated, _normal_interpolated
 import equinox as eqx
+from typing import Tuple
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen =  True)
-class FluxSurfaceNormalExtended(FluxSurface):
+
+
+class FluxSurfaceNormalExtended(FluxSurfaceBase):
     '''
     Class representing a flux surface that is extended along the normal direction.
 
@@ -34,9 +35,8 @@ class FluxSurfaceNormalExtended(FluxSurface):
         return _normal_extended_principal_curvatures(self, s, theta, phi)
 
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen =  True)
-class FluxSurfaceNormalExtendedNoPhi(FluxSurface):
+
+class FluxSurfaceNormalExtendedNoPhi(FluxSurfaceBase):
     '''
     Class representing a flux surface that is extended along the normal direction, but with no toroidal (phi) component in the extension.
 
@@ -60,9 +60,8 @@ class FluxSurfaceNormalExtendedNoPhi(FluxSurface):
     def principal_curvatures(self, s, theta, phi):
         return _normal_extended_no_phi_principal_curvatures(self, s, theta, phi)
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen =  True)
-class FluxSurfaceNormalExtendedConstantPhi(FluxSurface):
+
+class FluxSurfaceNormalExtendedConstantPhi(FluxSurfaceBase):
     '''
     Class representing a flux surface that is extended along the normal direction, but keeping the toroidal angle (phi) constant during the extension.
     The extension is done such that:
@@ -87,9 +86,8 @@ class FluxSurfaceNormalExtendedConstantPhi(FluxSurface):
     def principal_curvatures(self, s, theta, phi):        
         return _normal_extended_constant_phi_principal_curvatures(self, s, theta, phi)
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen =  True)
-class FluxSurfaceFourierExtended(FluxSurface):
+
+class FluxSurfaceFourierExtended(FluxSurfaceBase):
     '''
     A flux surface that is extended using another flux surface defined in Fourier space.
     This does not necessarily have to have the same mpol & ntor as the inner flux surface.
@@ -103,18 +101,18 @@ class FluxSurfaceFourierExtended(FluxSurface):
 
     Beyond that, the additional s is ignored.
     '''
-    extension_flux_surface : FluxSurface = None
+    extension_flux_surface : FluxSurfaceBase = None
 
     @classmethod
-    def from_flux_surface_and_extension(cls, flux_surface : FluxSurface, extension_flux_surface : FluxSurface):
+    def from_flux_surface_and_extension(cls, flux_surface : FluxSurfaceBase, extension_flux_surface : FluxSurfaceBase):
         '''
         Create a FluxSurfaceFourierExtended from a base flux surface and an extension flux surface.
 
         Parameters:
         -----------
-        flux_surface : FluxSurface
+        flux_surface : FluxSurfaceBase
             Base flux surface to extend.
-        extension_flux_surface : FluxSurface
+        extension_flux_surface : FluxSurfaceBase
             Extension flux surface to use for s > 1.0.
         Returns:
         -------
@@ -139,14 +137,14 @@ class FluxSurfaceFourierExtended(FluxSurface):
 # ===================================================================================================================================================================================
 
 @eqx.filter_jit
-def _normal_extended_cartesian_position(flux_surface : FluxSurface,  s,  theta, phi):    
+def _normal_extended_cartesian_position(flux_surface : FluxSurfaceBase,  s,  theta, phi):    
     '''
     Extend the cartesian position of a flux surface along the normal direction.
     For s <= 1.0, the original flux surface is used, while for s > 1.0, the position is given by moving along the normal direction of the flux surface at s = 1.0.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the position.
@@ -167,14 +165,14 @@ def _normal_extended_cartesian_position(flux_surface : FluxSurface,  s,  theta, 
     return positions + normals * distance_1d[..., None]
 
 @eqx.filter_jit
-def _normal_extended_cylindrical_position(flux_surface : FluxSurface,  s,  theta, phi):
+def _normal_extended_cylindrical_position(flux_surface : FluxSurfaceBase,  s,  theta, phi):
     '''
     Extend the cartesian position of a flux surface along the normal direction and afterwards convert to cylindrical coordinates.
     For s <= 1.0, the original flux surface is used, while for s > 1.0, the position is given by moving along the normal direction of the flux surface at s = 1.0.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the position.
@@ -190,7 +188,7 @@ def _normal_extended_cylindrical_position(flux_surface : FluxSurface,  s,  theta
     return _cartesian_to_cylindrical(_normal_extended_cartesian_position(flux_surface, s, theta, phi))
 
 @eqx.filter_jit
-def _normal_extended_normal(flux_surface : FluxSurface,  s,  theta, phi):
+def _normal_extended_normal(flux_surface : FluxSurfaceBase,  s,  theta, phi):
     '''
     Extend the normal of a flux surface along the normal direction.
 
@@ -198,7 +196,7 @@ def _normal_extended_normal(flux_surface : FluxSurface,  s,  theta, phi):
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase  
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the normal.
@@ -214,7 +212,7 @@ def _normal_extended_normal(flux_surface : FluxSurface,  s,  theta, phi):
     return _normal_interpolated(flux_surface, jnp.minimum(s, 1.0), theta, phi)
 
 @eqx.filter_jit
-def _normal_extended_principal_curvatures(flux_surface : FluxSurface,  s,  theta, phi):
+def _normal_extended_principal_curvatures(flux_surface : FluxSurfaceBase,  s,  theta, phi):
     '''
     Extend the principal curvatures of a flux surface along the normal direction. Uses the principal curvatures
     formulas in [1].
@@ -223,7 +221,7 @@ def _normal_extended_principal_curvatures(flux_surface : FluxSurface,  s,  theta
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to extend.
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the principal curvatures.
@@ -271,7 +269,7 @@ def _hat_phi(positions):
     return hat_phi
 
 @eqx.filter_jit
-def _normal_extended_no_phi_cartesian_position(flux_surface : FluxSurface,  s,  theta, phi):
+def _normal_extended_no_phi_cartesian_position(flux_surface : FluxSurfaceBase,  s,  theta, phi):
     '''
     Extend the cartesian position of a flux surface along the normal direction with no toroidal (phi) component.
     For s <= 1.0, the original flux surface is used, while for s > 1.0, the position is given by moving along the normal direction 
@@ -279,7 +277,7 @@ def _normal_extended_no_phi_cartesian_position(flux_surface : FluxSurface,  s,  
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the position.
@@ -306,7 +304,7 @@ def _normal_extended_no_phi_cartesian_position(flux_surface : FluxSurface,  s,  
     return positions + normal_no_phi_normalised * distance_1d[..., None]
 
 @eqx.filter_jit
-def _normal_extended_no_phi_cylindrical_position(flux_surface : FluxSurface,  s,  theta, phi):
+def _normal_extended_no_phi_cylindrical_position(flux_surface : FluxSurfaceBase,  s,  theta, phi):
     '''
     Extend the cartesian position of a flux surface along the normal direction with no toroidal component and convert to cylindrical coordinates.
     For s <= 1.0, the original flux surface is used, while for s > 1.0, the position is given by moving along the normal direction 
@@ -314,7 +312,7 @@ def _normal_extended_no_phi_cylindrical_position(flux_surface : FluxSurface,  s,
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase  
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the position.
@@ -330,7 +328,7 @@ def _normal_extended_no_phi_cylindrical_position(flux_surface : FluxSurface,  s,
     return _cartesian_to_cylindrical(_normal_extended_no_phi_cartesian_position(flux_surface, s, theta, phi))
 
 @eqx.filter_jit
-def _normal_extended_no_phi_normal(flux_surface : FluxSurface,  s,  theta, phi):
+def _normal_extended_no_phi_normal(flux_surface : FluxSurfaceBase,  s,  theta, phi):
     '''
     Compute the normal for a flux surface extended with no toroidal component.
     Returns NaN values as the normal is not well-defined in the extended region.
@@ -338,7 +336,7 @@ def _normal_extended_no_phi_normal(flux_surface : FluxSurface,  s,  theta, phi):
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the normal.
@@ -355,14 +353,14 @@ def _normal_extended_no_phi_normal(flux_surface : FluxSurface,  s,  theta, phi):
     return jnp.full(s_bc.shape + (3,), jnp.nan)
 
 @eqx.filter_jit
-def _normal_extended_no_phi_principal_curvatures(flux_surface : FluxSurface,  s,  theta, phi):
+def _normal_extended_no_phi_principal_curvatures(flux_surface : FluxSurfaceBase,  s,  theta, phi):
     '''
     Compute the principal curvatures for a flux surface extended with no toroidal component.
     Returns NaN values as the principal curvatures in not implemented in the extended region.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the principal curvatures.
@@ -381,7 +379,7 @@ def _normal_extended_no_phi_principal_curvatures(flux_surface : FluxSurface,  s,
 _normal_extended_no_phi_dx_dtheta = jax.jit(jnp.vectorize(jax.jacfwd(_normal_extended_no_phi_cartesian_position, argnums=3), excluded=(0,1), signature='(),(),()->(3)'))
 
 @eqx.filter_jit
-def __normal_extended_no_phi_arc_length_theta(flux_surface : FluxSurface, s, theta, phi):
+def __normal_extended_no_phi_arc_length_theta(flux_surface : FluxSurfaceBase, s, theta, phi):
     '''
     Compute the arc length derivative with respect to theta for a flux surface extended with no toroidal component.
 
@@ -389,7 +387,7 @@ def __normal_extended_no_phi_arc_length_theta(flux_surface : FluxSurface, s, the
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the arc length.
@@ -427,14 +425,14 @@ def _distance_between_angles(angle1, angle2):
     '''
     return jnp.arctan2(jnp.sin(angle1 - angle2), jnp.cos(angle1 - angle2))
 
-def _distance_between_phi_phi_desired(flux_surface, s, theta, phi, x):
+def _distance_between_phi_phi_desired(flux_surface : FluxSurfaceBase, s, theta, phi, x):
     '''
     Compute the angular distance between the toroidal angle of a position and a desired toroidal angle.
     Used as the objective function for finding the correct phi in constant-phi extensions.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s).
@@ -453,14 +451,14 @@ def _distance_between_phi_phi_desired(flux_surface, s, theta, phi, x):
     return _distance_between_angles(jnp.arctan2(positions[...,1], positions[...,0]), phi)
 
 @eqx.filter_jit
-def _normal_extended_constant_phi_find_phi(flux_surface, s, theta, phi, n_iter : int = 5):
+def _normal_extended_constant_phi_find_phi(flux_surface : FluxSurfaceBase, s , theta, phi, n_iter : int = 5):
     '''
     Find the toroidal angle needed in the extended region to maintain a constant output toroidal angle.
     Uses the secant method to solve for the angle that produces the desired phi after normal extension.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s).
@@ -495,7 +493,7 @@ def _normal_extended_constant_phi_find_phi(flux_surface, s, theta, phi, n_iter :
     return x_final
 
 @eqx.filter_jit
-def _normal_extended_constant_phi_cartesian_position(flux_surface : FluxSurface,  s,  theta, phi, n_iter : int = 5):
+def _normal_extended_constant_phi_cartesian_position(flux_surface : FluxSurfaceBase,  s,  theta, phi, n_iter : int = 5):
     '''
     Extend the cartesian position of a flux surface along the normal direction while keeping the toroidal angle constant.
     For s <= 1.0, the original flux surface is used, while for s > 1.0, the position is given by moving along the normal 
@@ -503,7 +501,7 @@ def _normal_extended_constant_phi_cartesian_position(flux_surface : FluxSurface,
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the position.
@@ -522,7 +520,7 @@ def _normal_extended_constant_phi_cartesian_position(flux_surface : FluxSurface,
     return _normal_extended_cartesian_position(flux_surface, s, theta, phi_c)
 
 @eqx.filter_jit
-def _normal_extended_constant_phi_cylindrical_position(flux_surface : FluxSurface,  s,  theta, phi, n_iter : int = 5):
+def _normal_extended_constant_phi_cylindrical_position(flux_surface : FluxSurfaceBase,  s,  theta, phi, n_iter : int = 5):
     '''
     Extend the position of a flux surface along the normal direction while keeping the toroidal angle constant and convert to cylindrical coordinates.
     For s <= 1.0, the original flux surface is used, while for s > 1.0, the position is given by moving along the normal 
@@ -530,7 +528,7 @@ def _normal_extended_constant_phi_cylindrical_position(flux_surface : FluxSurfac
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the position.
@@ -548,13 +546,13 @@ def _normal_extended_constant_phi_cylindrical_position(flux_surface : FluxSurfac
     return _cartesian_to_cylindrical(_normal_extended_constant_phi_cartesian_position(flux_surface, s, theta, phi, n_iter))
 
 @eqx.filter_jit
-def _normal_extended_constant_phi_normal(flux_surface : FluxSurface,  s,  theta, phi, n_iter : int = 5):
+def _normal_extended_constant_phi_normal(flux_surface : FluxSurfaceBase,  s,  theta, phi, n_iter : int = 5):
     '''
     Compute the normal for a flux surface extended along the normal direction with constant toroidal angle.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the normal.
@@ -573,13 +571,13 @@ def _normal_extended_constant_phi_normal(flux_surface : FluxSurface,  s,  theta,
     return _normal_extended_normal(flux_surface, s, theta, phi_c)
 
 @eqx.filter_jit
-def _normal_extended_constant_phi_principal_curvatures(flux_surface : FluxSurface,  s,  theta, phi, n_iter : int = 5):
+def _normal_extended_constant_phi_principal_curvatures(flux_surface : FluxSurfaceBase,  s,  theta, phi, n_iter : int = 5):
     '''
     Compute the principal curvatures for a flux surface extended along the normal direction with constant toroidal angle.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to evaluate
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the principal curvatures.
@@ -604,7 +602,7 @@ def _normal_extended_constant_phi_principal_curvatures(flux_surface : FluxSurfac
 
 
 @eqx.filter_jit
-def _fourier_extended_cylindrical_position(flux_surface : FluxSurface, extension : FluxSurface, s, theta, phi):
+def _fourier_extended_cylindrical_position(flux_surface : FluxSurfaceBase, extension : FluxSurfaceBase, s, theta, phi):
     '''
     Compute the cylindrical position for a flux surface with Fourier-based extension.
     For s <= 1.0, the original flux surface is used. For 1.0 < s < 2.0, linear interpolation between the LCFS 
@@ -612,9 +610,9 @@ def _fourier_extended_cylindrical_position(flux_surface : FluxSurface, extension
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Base flux surface to evaluate (s <= 1.0).
-    extension : FluxSurface
+    extension : FluxSurfaceBase
         Extension flux surface for s > 1.0.
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the position.
@@ -643,7 +641,7 @@ def _fourier_extended_cylindrical_position(flux_surface : FluxSurface, extension
                      inner_positions + (extension_positions_d0- inner_positions) * d_value[..., None])
 
 @eqx.filter_jit
-def _fourier_extended_cartesian_position(flux_surface : FluxSurface, extension : FluxSurface, s, theta, phi):
+def _fourier_extended_cartesian_position(flux_surface : FluxSurfaceBase, extension : FluxSurfaceBase, s, theta, phi):
     '''
     Compute the cartesian position for a flux surface with Fourier-based extension.
     For s <= 1.0, the original flux surface is used. For 1.0 < s < 2.0, linear interpolation between the LCFS 
@@ -651,9 +649,9 @@ def _fourier_extended_cartesian_position(flux_surface : FluxSurface, extension :
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Base flux surface to evaluate (s <= 1.0).
-    extension : FluxSurface
+    extension : FluxSurfaceBase
         Extension flux surface for s > 1.0.
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the position.
@@ -669,7 +667,7 @@ def _fourier_extended_cartesian_position(flux_surface : FluxSurface, extension :
     return _cylindrical_to_cartesian(_fourier_extended_cylindrical_position(flux_surface, extension, s, theta, phi))
     
 @eqx.filter_jit
-def _fourier_extended_normal(flux_surface : FluxSurface, extension : FluxSurface, s, theta, phi):
+def _fourier_extended_normal(flux_surface : FluxSurfaceBase, extension : FluxSurfaceBase, s, theta, phi):
     '''
     Compute the normal vector for a flux surface with Fourier-based extension.
     For s <= 1.0, the original flux surface normal is used. For 1.0 < s < 2.0, linear interpolation between 
@@ -677,9 +675,9 @@ def _fourier_extended_normal(flux_surface : FluxSurface, extension : FluxSurface
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Base flux surface to evaluate (s <= 1.0).
-    extension : FluxSurface
+    extension : FluxSurfaceBase
         Extension flux surface for s > 1.0.
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the normal.
@@ -707,7 +705,7 @@ def _fourier_extended_normal(flux_surface : FluxSurface, extension : FluxSurface
                      inner_normals + (extension_normals_d0 - inner_normals) * d_value[..., None])
 
 @eqx.filter_jit
-def _fourier_extended_principal_curvatures(flux_surface : FluxSurface, extension : FluxSurface, s, theta, phi):
+def _fourier_extended_principal_curvatures(flux_surface : FluxSurfaceBase, extension : FluxSurfaceBase, s, theta, phi):
     '''
     Compute the principal curvatures for a flux surface with Fourier-based extension.
     For s <= 1.0, the original flux surface curvatures are used. For 1.0 < s < 2.0, linear interpolation between 
@@ -715,9 +713,9 @@ def _fourier_extended_principal_curvatures(flux_surface : FluxSurface, extension
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Base flux surface to evaluate (s <= 1.0).
-    extension : FluxSurface
+    extension : FluxSurfaceBase
         Extension flux surface for s > 1.0.
     s : jnp.ndarray
         Radial coordinate(s) at which to evaluate the principal curvatures.

@@ -24,7 +24,7 @@ def _extended_sampling_grid(fs_jax : jsb.flux_surfaces.FluxSurface, n_s : int = 
     ss = jax.lax.cond(include_axis, lambda x : jnp.linspace(0,_extension_s_max(),n_s), lambda x : jnp.linspace(0, _extension_s_max(), n_s + 1)[1:], None)
     
     tt = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    pp = jnp.linspace(0, 2 * jnp.pi / fs_jax.settings.nfp, n_phi, endpoint=True)
+    pp = jnp.linspace(0, 2 * jnp.pi / fs_jax.nfp, n_phi, endpoint=True)
     return jnp.meshgrid(ss, tt, pp, indexing='ij')
 
 def _extended_1d_sampling_grid(fs_jax : jsb.flux_surfaces.FluxSurface, n_s : int = 6, n_theta : int = 7, n_phi : int = 5, include_axis = True, reverse_theta : bool = False):

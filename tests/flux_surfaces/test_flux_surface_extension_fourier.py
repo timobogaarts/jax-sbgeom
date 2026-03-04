@@ -26,7 +26,7 @@ def test_conversion_to_fourier_representation(data_file):
     
     n_theta = fs_jax.settings.mpol * 2 + 3 # nyquist
     n_phi   = fs_jax.settings.ntor * 2 + 51 # nyquist
-    symm    = fs_jax.settings.nfp
+    symm    = fs_jax.nfp
 
     
     theta   = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False)

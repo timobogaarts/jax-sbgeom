@@ -57,7 +57,7 @@ def _sampling_grid(fs_jax : jsb.flux_surfaces.FluxSurface, n_s : int = 6, n_thet
     ss = jax.lax.cond(include_axis, lambda x : jnp.linspace(0,1,n_s), lambda x : jnp.linspace(0,1, n_s + 1)[1:], None)
     
     tt = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    pp = jnp.linspace(0, 2 * jnp.pi / fs_jax.settings.nfp, n_phi, endpoint=True)
+    pp = jnp.linspace(0, 2 * jnp.pi / fs_jax.nfp, n_phi, endpoint=True)
     return jnp.meshgrid(ss, tt, pp, indexing='ij')
 
 
@@ -414,7 +414,7 @@ def test_RZ_to_VMEC_lcfs(data_file):
 
      
     theta = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False)
-    phi   = jnp.linspace(0, 2*jnp.pi / fs_jax.settings.nfp, n_phi, endpoint=False)
+    phi   = jnp.linspace(0, 2*jnp.pi / fs_jax.nfp, n_phi, endpoint=False)
     theta_mg, phi_mg = jnp.meshgrid(theta, phi, indexing='ij')
 
     positions_jax = fs_jax.cylindrical_position(1.0, theta_mg, phi_mg)

@@ -37,7 +37,7 @@ def generate_thickness_matrix(flux_surface : FluxSurfaceNormalExtendedNoPhi, mes
         warn("in generate_thickness_matrix, expected as type FluxSurfaceNormalExtendedNoPhi, but got type: " + str(type(flux_surface)) + ". Results may be incorrect as this does not "
         "guarantee a straight line as extension", RuntimeWarning)
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta)
-    phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.settings.nfp, n_phi)
+    phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.nfp, n_phi)
     theta, phi = jnp.meshgrid(theta, phi, indexing='ij')
     positions_lcfs_mg  = flux_surface.cartesian_position(1.0,  theta, phi)
     directions_lcfs_mg = flux_surface.cartesian_position(2.0, theta, phi) - positions_lcfs_mg

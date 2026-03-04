@@ -1,7 +1,7 @@
 import jax 
 import jax.numpy as jnp
 from functools import partial
-from .flux_surfaces_base import _create_mpol_vector, _create_ntor_vector, FluxSurface, FluxSurfaceData, FluxSurfaceModes, FluxSurfaceSettings, _interpolate_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod_finite_difference
+from .flux_surfaces_base import FluxSurfaceBase, _create_mpol_vector, _create_ntor_vector, FluxSurface, FluxSurfaceData, FluxSurfaceModes, FluxSurfaceSettings, _interpolate_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod, _arc_length_theta_interpolating_s_grid_full_mod_finite_difference
 from .flux_surfaces_base import _arc_length_theta_direct, _cylindrical_position_direct
 from .flux_surfaces_extended import FluxSurfaceNormalExtended, FluxSurfaceNormalExtendedNoPhi, FluxSurfaceNormalExtendedConstantPhi, FluxSurfaceFourierExtended
 from jax_sbgeom.jax_utils import bilinear_interp, resample_uniform_periodic_pchip, resample_uniform_periodic_linear
@@ -161,7 +161,7 @@ def _convert_fluxsurfacedata_to_different_settings(data : FluxSurfaceData, new_s
     Zmns_new = _convert_array_to_different_settings(data.Zmns, new_settings, old_settings)
     return FluxSurfaceData(Rmnc_new, Zmns_new)
 
-def convert_to_different_settings(fluxsurface : FluxSurface, settings_new : FluxSurfaceSettings) -> FluxSurface:
+def convert_to_different_settings(fluxsurface : FluxSurfaceBase, settings_new : FluxSurfaceSettings) -> FluxSurface:
     '''
     Convert FluxSurface to a different (mpol, ntor) representation.
 
@@ -170,7 +170,7 @@ def convert_to_different_settings(fluxsurface : FluxSurface, settings_new : Flux
 
     Parameters:
     -----------
-    fluxsurface : FluxSurface
+    fluxsurface : FluxSurfaceBase
         The flux surface to convert.
     settings_new : FluxSurfaceSettings
         The new Fourier settings (mpol, ntor).
@@ -184,7 +184,7 @@ def convert_to_different_settings(fluxsurface : FluxSurface, settings_new : Flux
     return type(fluxsurface)(data = _convert_fluxsurfacedata_to_different_settings(fluxsurface.data, settings_new, fluxsurface.settings), modes = FluxSurfaceModes.from_settings(settings_new), settings = settings_new)
 
 @eqx.filter_jit
-def _convert_to_equal_arclength_single(flux_surface : FluxSurface, n_theta : int, n_phi : int, n_theta_s_arclength : int) -> Tuple[FluxSurfaceData, FluxSurfaceSettings]:    
+def _convert_to_equal_arclength_single(flux_surface : FluxSurfaceBase, n_theta : int, n_phi : int, n_theta_s_arclength : int) -> Tuple[FluxSurfaceData, FluxSurfaceSettings]:    
     '''
     Convert a single flux surface to a Fourier representation sampled on an equal arclength poloidal grid.
     This requires a full FluxSurface instead of only settings and data, as the position function is needed. This makes batching easier as well:
@@ -192,7 +192,7 @@ def _convert_to_equal_arclength_single(flux_surface : FluxSurface, n_theta : int
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux surface to convert.
     n_theta : int
         Number of poloidal modes in the Fourier representation [= n_theta // 2]
@@ -210,7 +210,7 @@ def _convert_to_equal_arclength_single(flux_surface : FluxSurface, n_theta : int
     assert flux_surface.data.Rmnc.ndim == 1, "convert_to_equal_arclength only supports single surface conversion"
 
     theta_s              = jnp.linspace(0, 2 * jnp.pi,                             n_theta_s_arclength, endpoint=False)
-    phi_s                = jnp.linspace(0, 2 * jnp.pi / flux_surface.settings.nfp, n_phi,              endpoint=False) 
+    phi_s                = jnp.linspace(0, 2 * jnp.pi / flux_surface.nfp, n_phi,              endpoint=False) 
     theta_mg_s, phi_mg_s = jnp.meshgrid(theta_s, phi_s, indexing='ij')    
     arc_lengths          = _arc_length_theta_direct(flux_surface, theta_mg_s, phi_mg_s) #[n_theta_s_arclength, n_phi]
     
@@ -222,15 +222,15 @@ def _convert_to_equal_arclength_single(flux_surface : FluxSurface, n_theta : int
     
     flux_surface_data    = _rz_to_vmec_representation(RZphi_sampled[..., 0], RZphi_sampled[..., 1])
     
-    return flux_surface_data, FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.settings.nfp)
+    return flux_surface_data, FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.nfp)
 
 @eqx.filter_jit
-def convert_to_equal_arclength(flux_surface : FluxSurface, n_theta : int, n_phi : int, n_theta_s_arclength : int) -> Tuple[FluxSurfaceData, FluxSurfaceSettings]:   
+def convert_to_equal_arclength(flux_surface : FluxSurfaceBase, n_theta : int, n_phi : int, n_theta_s_arclength : int) -> Tuple[FluxSurfaceData, FluxSurfaceSettings]:   
     if flux_surface.data.Rmnc.ndim == 1:
         return _convert_to_equal_arclength_single(flux_surface, n_theta, n_phi, n_theta_s_arclength)
     else:
-        flux_surface_data, _  = jax.vmap(_convert_to_equal_arclength_single, in_axes=(FluxSurface(FluxSurfaceData(0,0), FluxSurfaceModes(None, None), FluxSurfaceSettings(None, None, None)), None, None, None ))(flux_surface, n_theta, n_phi, n_theta_s_arclength)
-        return flux_surface_data, FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.settings.nfp)
+        flux_surface_data, _  = jax.vmap(_convert_to_equal_arclength_single, in_axes=(FluxSurfaceBase(FluxSurfaceData(0,0), FluxSurfaceModes(None, None), FluxSurfaceSettings(None, None, None)), None, None, None ))(flux_surface, n_theta, n_phi, n_theta_s_arclength)
+        return flux_surface_data, FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.nfp)
     
 def mpol_ntor_from_ntheta_nphi(n_theta : int, n_phi : int) -> Tuple[int,int]:    
     mpol = n_theta // 2
@@ -239,13 +239,13 @@ def mpol_ntor_from_ntheta_nphi(n_theta : int, n_phi : int) -> Tuple[int,int]:
 
 
 @eqx.filter_jit
-def create_fourier_representation(flux_surface : FluxSurface, s : jnp.ndarray, theta_grid : jnp.ndarray) -> Tuple[FluxSurfaceData, FluxSurfaceSettings]:
+def create_fourier_representation(flux_surface : FluxSurfaceBase, s : jnp.ndarray, theta_grid : jnp.ndarray) -> Tuple[FluxSurfaceData, FluxSurfaceSettings]:
     '''
     Create a Fourier representation of a flux surface at given (s, theta) grid points.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux_Surface to create the Fourier representation of.
     s : jnp.ndarray [n_theta, n_phi] or float
         Radial coordinate(s) at which to sample the flux surface. If an array, must have the same shape as theta_grid.
@@ -274,24 +274,24 @@ def create_fourier_representation(flux_surface : FluxSurface, s : jnp.ndarray, t
     n_theta                  = theta_grid.shape[0]
     n_phi                    = theta_grid.shape[1]
 
-    phi_grid                 = jnp.linspace(0, 2*jnp.pi / flux_surface.settings.nfp, n_phi, endpoint=False)    
+    phi_grid                 = jnp.linspace(0, 2*jnp.pi / flux_surface.nfp, n_phi, endpoint=False)    
     _, phi_mg                = jnp.meshgrid(jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False), phi_grid, indexing='ij')
 
     RZphi_sampled            = flux_surface.cylindrical_position(s, theta_grid, phi_mg)
     
     flux_surface_data        = _rz_to_vmec_representation(RZphi_sampled[..., 0], RZphi_sampled[..., 1])
     
-    return flux_surface_data, FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.settings.nfp)
+    return flux_surface_data, FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.nfp)
 
 @eqx.filter_jit
-def _create_fourier_representation_d_interp_single(flux_surfaces : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int):
+def _create_fourier_representation_d_interp_single(flux_surfaces : FluxSurfaceBase, d : jnp.ndarray, n_theta : int, n_phi : int):
     '''
     Create a Fourier representation of an extended flux surface with an interpolated extension distance. 
     
 
     Parameters:
     -----------
-    flux_surfaces : FluxSurface
+    flux_surfaces : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
     d : jnp.ndarray [n_theta_sampled, n_phi_sampled] or float
         Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)
@@ -303,9 +303,9 @@ def _create_fourier_representation_d_interp_single(flux_surfaces : FluxSurface, 
     --------
     
     '''
-    theta, phi                  = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False), jnp.linspace(0, 2*jnp.pi/flux_surfaces.settings.nfp, n_phi, endpoint=False)
+    theta, phi                  = jnp.linspace(0, 2*jnp.pi, n_theta, endpoint=False), jnp.linspace(0, 2*jnp.pi/flux_surfaces.nfp, n_phi, endpoint=False)
     theta_mg, phi_mg            = jnp.meshgrid(theta, phi, indexing='ij')
-    s_interp                    = _interpolate_s_grid_full_mod(theta_mg, phi_mg, flux_surfaces.settings.nfp, jnp.atleast_2d(d) + 1.0)
+    s_interp                    = _interpolate_s_grid_full_mod(theta_mg, phi_mg, flux_surfaces.nfp, jnp.atleast_2d(d) + 1.0)
     flux_surface_data, settings =  create_fourier_representation(flux_surfaces, s_interp, theta_mg)
     return flux_surface_data, settings
 
@@ -319,7 +319,7 @@ _create_fourier_representation_d_interp_vmap = jax.vmap(_create_fourier_represen
 
 
 @eqx.filter_jit
-def create_fourier_representation_d_interp(flux_surface : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int):
+def create_fourier_representation_d_interp(flux_surface : FluxSurfaceBase, d : jnp.ndarray, n_theta : int, n_phi : int):
     '''
     Create a Fourier representation of an extended flux surface with an interpolated extension distance. 
     Can be batched over d: if d is a scalar or 2D array, a single flux surface is created.
@@ -327,7 +327,7 @@ def create_fourier_representation_d_interp(flux_surface : FluxSurface, d : jnp.n
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi out for FFT)
     d : jnp.ndarray 
         Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)  
@@ -345,9 +345,9 @@ def create_fourier_representation_d_interp(flux_surface : FluxSurface, d : jnp.n
         Settings of the Fourier representation (mpol, ntor, nfp).
 
     '''
-    assert d.ndim < 4, f"d must be a scalar or 1D, 2D or 3D array but got shape {d.shape}"
+    assert jnp.array(d).ndim < 4, f"d must be a scalar or 1D, 2D or 3D array but got shape {d.shape}"
     d = jnp.array(d)
-    new_settings = FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.settings.nfp)
+    new_settings = FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.nfp)
     if d.ndim == 0 or d.ndim == 2:
         flux_surface_data, _ =  _create_fourier_representation_d_interp_single(flux_surface, d, n_theta, n_phi)
     elif d.ndim == 1 or d.ndim == 3:
@@ -357,13 +357,13 @@ def create_fourier_representation_d_interp(flux_surface : FluxSurface, d : jnp.n
     return flux_surface_data, new_settings
 
 
-def create_flux_surface_d_interp(flux_surface : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int, type_c : Type =  FluxSurface) -> FluxSurface:         
+def create_flux_surface_d_interp(flux_surface : FluxSurfaceBase, d : jnp.ndarray, n_theta : int, n_phi : int, type_c : Type =  FluxSurface) -> FluxSurface:         
     '''
     Convenience function of create_fourier_representation_d_interp + type_c.from_data_settings_full, returning a FluxSurface of given type.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormal
     d : jnp.ndarray 
         Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)  
@@ -378,7 +378,7 @@ def create_flux_surface_d_interp(flux_surface : FluxSurface, d : jnp.ndarray, n_
     '''
     return type_c.from_data_settings_full(*create_fourier_representation_d_interp(flux_surface, d, n_theta, n_phi))
 
-def create_extended_flux_surface_d_interp(flux_surface : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int):
+def create_extended_flux_surface_d_interp(flux_surface : FluxSurfaceBase, d : jnp.ndarray, n_theta : int, n_phi : int):
     '''
     Creates a FluxSurfaceFourierExtended by extending a given flux surface using a distance function d and interpolating the distance function.
 
@@ -388,7 +388,7 @@ def create_extended_flux_surface_d_interp(flux_surface : FluxSurface, d : jnp.nd
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormal
     d : jnp.ndarray 
         Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)  
@@ -404,13 +404,13 @@ def create_extended_flux_surface_d_interp(flux_surface : FluxSurface, d : jnp.nd
     return FluxSurfaceFourierExtended.from_flux_surface_and_extension(FluxSurface(data = flux_surface.data, modes = flux_surface.modes, settings = flux_surface.settings), create_flux_surface_d_interp(flux_surface, d, n_theta, n_phi, type_c=FluxSurface))
 
 @eqx.filter_jit
-def create_fourier_representation_d_interp_equal_arclength(flux_surface : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int):    
+def create_fourier_representation_d_interp_equal_arclength(flux_surface : FluxSurfaceBase, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int):    
     '''
     Convenience function of create_fourier_representation_d_interp + convert_to_equal_arclength
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
     d : jnp.ndarray 
         Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)  
@@ -429,14 +429,14 @@ def create_fourier_representation_d_interp_equal_arclength(flux_surface : FluxSu
     '''        
     return convert_to_equal_arclength(FluxSurface.from_data_settings(*create_fourier_representation_d_interp(flux_surface, d, n_theta, n_phi)), n_theta, n_phi, n_theta_s_arclength)
 
-def create_flux_surface_d_interp_equal_arclength(flux_surface : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int, type_c : Type =  FluxSurface):        
+def create_flux_surface_d_interp_equal_arclength(flux_surface : FluxSurfaceBase, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int, type_c : Type =  FluxSurface):        
     '''
     Convenience function of create_fourier_representation_d_interp + convert_to_equal_arclength + type_c.from_data_settings_full, returning a FluxSurface of given type.
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
-        Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormal
+    flux_surface : FluxSurfaceBase  
+        Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
     d : jnp.ndarray 
         Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)  
     n_theta : int
@@ -452,7 +452,7 @@ def create_flux_surface_d_interp_equal_arclength(flux_surface : FluxSurface, d :
     '''
     return type_c.from_data_settings_full(*create_fourier_representation_d_interp_equal_arclength(flux_surface, d, n_theta, n_phi, n_theta_s_arclength))
 
-def create_extended_flux_surface_d_interp_equal_arclength(flux_surface : FluxSurface, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int):    
+def create_extended_flux_surface_d_interp_equal_arclength(flux_surface : FluxSurfaceBase, d : jnp.ndarray, n_theta : int, n_phi : int, n_theta_s_arclength : int):    
     '''
     Creates a FluxSurfaceFourierExtended by extending a given flux surface using a distance function d, interpolating the distance function, and sampling on an equal arclength poloidal grid.
 
@@ -462,7 +462,7 @@ def create_extended_flux_surface_d_interp_equal_arclength(flux_surface : FluxSur
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
     d : jnp.ndarray 
         Distance function to extend the flux surface with. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)  

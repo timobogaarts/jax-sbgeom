@@ -1,3 +1,5 @@
+from abc import abstractmethod
+
 import jax.numpy as jnp
 import h5py 
 import jax
@@ -263,13 +265,36 @@ def _data_modes_settings_from_hdf5(filename : str, make_normals_point_outwards :
         modes = FluxSurfaceModes.from_settings(settings)
         
         return data,  modes, settings
-    
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class FluxSurface:
+class ParametrisedSurface(eqx.Module):
+    '''
+    * Internal * 
+
+    Class representing a parametrised surface. This is used for the interpolation-based methods that require 2D data. 
+    The surface is parametrised by (s, theta, phi) where s is the surface index or normalized flux label, theta is the poloidal angle and phi is the toroidal angle.    
+    '''
+    @abstractmethod
+    def cylindrical_position(self, s, theta, phi):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def cartesian_position(self, s, theta, phi):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def normal(self, s, theta, phi):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def principal_curvatures(self, s, theta, phi):
+        raise NotImplementedError
+        
+
+
+class FluxSurfaceBase(ParametrisedSurface):
     ''' 
     Class representing a set of flux surfaces using a VMEC-like representation.
+    Base abstract class that provides no implementation. The actual implementation is provided in the FluxSurface class, which inherits from this base class. This allows for different implementations of the same interface, such as interpolation-based or direct evaluation-based methods.
 
     Attributes:
     -----------
@@ -303,7 +328,7 @@ class FluxSurface:
         return cls(data=data, modes = modes, settings=settings)
     
     @classmethod
-    def from_flux_surface(cls, flux_surface_base : "FluxSurface"):
+    def from_flux_surface(cls, flux_surface_base : "FluxSurfaceBase"):
         '''
         Create a FluxSurface from another FluxSurface (copy constructor).
         Can be used to convert between subclasses of FluxSurface.
@@ -381,6 +406,15 @@ class FluxSurface:
         data = FluxSurfaceData(Rmnc = jnp.atleast_2d(data.Rmnc), Zmns = jnp.atleast_2d(data.Zmns))
         modes = FluxSurfaceModes.from_settings(settings)        
         return cls(data=data, modes = modes, settings=settings)        
+    
+    @property 
+    def nfp(self):
+        return self.settings.nfp
+
+
+
+class FluxSurface(FluxSurfaceBase):    
+
 
     def cylindrical_position(self, s, theta, phi):
         '''
@@ -458,7 +492,7 @@ class FluxSurface:
         '''
         return _principal_curvatures_interpolated(self, s, theta, phi)
     
-def make_2d_flux_surface(fs : FluxSurface) -> FluxSurface:
+def make_2d_flux_surface(fs : FluxSurfaceBase) -> FluxSurfaceBase:
     '''
     Convert a FluxSurface with 1D data to a FluxSurface with 2D data by adding a dummy surface dimension.
     This allows you to use the interpolation-based methods that require 2D data. Interpolation on one surface will 
@@ -466,12 +500,12 @@ def make_2d_flux_surface(fs : FluxSurface) -> FluxSurface:
 
     Parameters:
     -----------
-    fs : FluxSurface
-        The input FluxSurface with 1D data.
+    fs : FluxSurfaceBase
+        The input FluxSurfaceBase with 1D data.
     Returns:
     --------
-    FluxSurface
-        The output FluxSurface with 2D data.
+    FluxSurfaceBase
+        The output FluxSurfaceBase with 2D data.
     '''
     return type(fs)(data = FluxSurfaceData(jnp.atleast_2d(fs.data.Rmnc), jnp.atleast_2d(fs.data.Zmns)),
                 modes = fs.modes,
@@ -495,7 +529,7 @@ class ToroidalExtent:
     end   : float
 
     @classmethod
-    def half_module(self, flux_surface : FluxSurface, dphi = 0.0):
+    def half_module(self, flux_surface : FluxSurfaceBase, dphi = 0.0):
         '''
         Create a ToroidalExtent representing half a field period.
 
@@ -510,10 +544,10 @@ class ToroidalExtent:
         ToroidalExtent
             The created ToroidalExtent.
         '''
-        return self(dphi, 2 * jnp.pi / flux_surface.settings.nfp / 2.0 + dphi)
+        return self(dphi, 2 * jnp.pi / flux_surface.nfp / 2.0 + dphi)
     
     @classmethod
-    def full_module(self, flux_surface : FluxSurface, dphi = 0.0):
+    def full_module(self, flux_surface : FluxSurfaceBase, dphi = 0.0):
         '''
         Create a ToroidalExtent representing a full field period.
 
@@ -528,7 +562,7 @@ class ToroidalExtent:
         ToroidalExtent
             The created ToroidalExtent.
         '''
-        return self(dphi, 2 * jnp.pi / flux_surface.settings.nfp + dphi)
+        return self(dphi, 2 * jnp.pi / flux_surface.nfp + dphi)
     
     @classmethod 
     def full(self):
@@ -563,7 +597,7 @@ class ToroidalExtent:
 #                                                                           Positions
 # ===================================================================================================================================================================================
 @partial(jax.jit)
-def _cylindrical_position_direct(flux_surface : FluxSurface, theta, phi):        
+def _cylindrical_position_direct(flux_surface : FluxSurfaceBase, theta, phi):        
     '''
     Cylindrical position on the flux surface as a function of (theta, phi) for a single surface (1D data).
 
@@ -608,13 +642,13 @@ def _cylindrical_position_direct(flux_surface : FluxSurface, theta, phi):
     return jnp.stack([R, Z, phi_bc],axis=-1)
 
 @partial(jax.jit)
-def _cartesian_position_direct(flux_surface : FluxSurface, theta, phi):
+def _cartesian_position_direct(flux_surface : FluxSurfaceBase, theta, phi):
     '''
     Cartesian position on the flux surface as a function of (theta, phi) for a single surface (1D data).
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object.
     theta : jnp.ndarray
         Poloidal angle(s)
@@ -631,13 +665,13 @@ def _cartesian_position_direct(flux_surface : FluxSurface, theta, phi):
 _dx_dtheta_direct = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_direct, argnums=1), excluded=(0,), signature='(),()->(3)'))
 
 @partial(jax.jit)
-def _arc_length_theta_direct(flux_surface : FluxSurface, theta, phi):
+def _arc_length_theta_direct(flux_surface : FluxSurfaceBase, theta, phi):
     '''
     Arc length with respect to theta on the flux surface as a function of (theta, phi) for a single surface (1D data).
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object.
     theta : jnp.ndarray
         Poloidal angle(s)
@@ -653,7 +687,7 @@ def _arc_length_theta_direct(flux_surface : FluxSurface, theta, phi):
     return dx_dtheta_norm
 
 @eqx.filter_jit
-def _cylindrical_position_interpolated(flux_surface : FluxSurface,  s,  theta, phi):
+def _cylindrical_position_interpolated(flux_surface : FluxSurfaceBase,  s,  theta, phi):
     '''
     Cylindrical position on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
 
@@ -671,7 +705,7 @@ def _cylindrical_position_interpolated(flux_surface : FluxSurface,  s,  theta, p
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object.
     s : jnp.ndarray
         Surface index or normalized flux label
@@ -684,7 +718,7 @@ def _cylindrical_position_interpolated(flux_surface : FluxSurface,  s,  theta, p
     jnp.ndarray
         Cylindrical position(s) on the flux surface [R, Z, phi]
     '''
-    assert flux_surface.data.Rmnc.ndim == 2, "Data must be a 2D array but is of shape {} [Did you use a FluxSurface with only 1D data? Check out make_2d_flux_surface.]".format(flux_surface.data.Rmnc.shape)
+    assert flux_surface.data.Rmnc.ndim == 2, "Data must be a 2D array but is of shape {} [Did you use a FluxSurfaceBase with only 1D data? Check out make_2d_flux_surface.]".format(flux_surface.data.Rmnc.shape)
     
     # This in essence computes:
     # R   = jnp.sum(Rmnc_interp[..., None] * jnp.cos(mpol_vector[..., None] * theta[None, ...] - ntor_vector[..., None] * phi[None, ...]), axis=-1)
@@ -715,7 +749,7 @@ def _cylindrical_position_interpolated(flux_surface : FluxSurface,  s,  theta, p
     
 
 @eqx.filter_jit
-def _cartesian_position_interpolated(flux_surface : FluxSurface, s, theta, phi):
+def _cartesian_position_interpolated(flux_surface : FluxSurfaceBase, s, theta, phi):
     '''
     Cartesian position on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
 
@@ -733,7 +767,7 @@ def _cartesian_position_interpolated(flux_surface : FluxSurface, s, theta, phi):
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object.
     s : jnp.ndarray
         Surface index or normalized flux label
@@ -752,13 +786,13 @@ def _cartesian_position_interpolated(flux_surface : FluxSurface, s, theta, phi):
 _dx_dtheta = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_interpolated, argnums=2), excluded=(0,), signature='(),(),()->(3)'))
 
 @eqx.filter_jit
-def _arc_length_theta(flux_surface : FluxSurface, s, theta, phi):
+def _arc_length_theta(flux_surface : FluxSurfaceBase, s, theta, phi):
     ''''
     Arc length with respect to theta on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object.
     s : jnp.ndarray
         Surface index or normalized flux label
@@ -785,13 +819,13 @@ def _arc_length_theta(flux_surface : FluxSurface, s, theta, phi):
 _cartesian_position_interpolated_grad = jax.jit(jnp.vectorize(stack_jacfwd(_cartesian_position_interpolated, argnums=(2,3)), excluded=(0,), signature='(),(),()->(3,2)'))
 
 @eqx.filter_jit
-def _dx_dphi_cross_dx_dtheta(flux_surface : FluxSurface, s, theta, phi):
+def _dx_dphi_cross_dx_dtheta(flux_surface : FluxSurfaceBase, s, theta, phi):
     '''
     Compute the cross product of dr/dphi and dr/dtheta on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object.
     s : jnp.ndarray 
         Surface index or normalized flux label
@@ -812,13 +846,13 @@ def _dx_dphi_cross_dx_dtheta(flux_surface : FluxSurface, s, theta, phi):
     return n
 
 @eqx.filter_jit
-def _normal_interpolated(flux_surface : FluxSurface, s, theta, phi):    
+def _normal_interpolated(flux_surface : FluxSurfaceBase, s, theta, phi):    
     '''
     Normal vector on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object.
     s : jnp.ndarray
         Surface index or normalized flux label
@@ -844,13 +878,13 @@ def _normal_interpolated(flux_surface : FluxSurface, s, theta, phi):
 _cartesian_position_interpolated_grad_grad = jax.jit(jnp.vectorize(stack_jacfwd(stack_jacfwd(_cartesian_position_interpolated, argnums=(2,3)), argnums = (2,3)), excluded=(0,), signature='(),(),()->(3,2,2)'))
 
 @eqx.filter_jit
-def _principal_curvatures_interpolated(flux_surface : FluxSurface, s, theta, phi):
+def _principal_curvatures_interpolated(flux_surface : FluxSurfaceBase, s, theta, phi):
     '''
     Principal curvatures on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).  
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object.
     s : jnp.ndarray
         Surface index or normalized flux label
@@ -896,7 +930,7 @@ def _principal_curvatures_interpolated(flux_surface : FluxSurface, s, theta, phi
 # ===================================================================================================================================================================================
 
 @eqx.filter_jit
-def _volume_from_fourier(flux_surface : FluxSurface, s : float):
+def _volume_from_fourier(flux_surface : FluxSurfaceBase, s : float):
     ''' 
     Compute the volume enclosed by the flux surface at s using a Fourier representation.
 
@@ -909,7 +943,7 @@ def _volume_from_fourier(flux_surface : FluxSurface, s : float):
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object containing Fourier coefficients and settings.
     s : float
         The normalized flux surface label (0 <= s <= 1).
@@ -930,10 +964,10 @@ def _volume_from_fourier(flux_surface : FluxSurface, s : float):
     n_phi   = flux_surface.settings.ntor *  nyquist_sampling  +1
     
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.settings.nfp, n_phi, endpoint=False)
+    phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.nfp, n_phi, endpoint=False)
     
     dtheta = 2 * jnp.pi / n_theta
-    dphi   = 2 * jnp.pi / flux_surface.settings.nfp  /  n_phi 
+    dphi   = 2 * jnp.pi / flux_surface.nfp  /  n_phi 
 
     tt, pp = jnp.meshgrid(theta, phi, indexing='ij')
     
@@ -942,12 +976,12 @@ def _volume_from_fourier(flux_surface : FluxSurface, s : float):
     r                     = _cartesian_position_interpolated(flux_surface, s, tt, pp)    
     f_ij = jnp.einsum('...i,...i->...', r, surface_normals)
 
-    volume = jnp.sum(f_ij) * dtheta * dphi / 3.0 * flux_surface.settings.nfp 
+    volume = jnp.sum(f_ij) * dtheta * dphi / 3.0 * flux_surface.nfp 
 
     return volume
 
 @eqx.filter_jit
-def _volume_from_fourier_half_mod(flux_surface : FluxSurface, s : float):
+def _volume_from_fourier_half_mod(flux_surface : FluxSurfaceBase, s : float):
     ''' 
     Compute the volume enclosed by the flux surface at s using a Fourier representation.
 
@@ -960,7 +994,7 @@ def _volume_from_fourier_half_mod(flux_surface : FluxSurface, s : float):
 
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : FluxSurfaceBase
         The flux surface object containing Fourier coefficients and settings.
     s : float
         The normalized flux surface label (0 <= s <= 1).
@@ -993,7 +1027,7 @@ def _volume_from_fourier_half_mod(flux_surface : FluxSurface, s : float):
     # We chose the latter option since it is one less computation. Numerically, they are exactly the same.
 
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.settings.nfp , 2* n_phi, endpoint=True)[:n_phi]
+    phi   = jnp.linspace(0, 2 * jnp.pi / flux_surface.nfp , 2* n_phi, endpoint=True)[:n_phi]
     
     dtheta = 2 * jnp.pi / n_theta
     dphi   = phi[1]- phi[0]
@@ -1008,7 +1042,7 @@ def _volume_from_fourier_half_mod(flux_surface : FluxSurface, s : float):
     base_half_mod          = jnp.sum(f_ij) * dtheta * dphi / 3.0 
     boundary_correction_b1 = jnp.sum(f_ij[:,0]) * dtheta * dphi / 3.0 
 
-    return (base_half_mod * 2.0 -  boundary_correction_b1) * flux_surface.settings.nfp
+    return (base_half_mod * 2.0 -  boundary_correction_b1) * flux_surface.nfp
     
 
 
@@ -1073,7 +1107,7 @@ def _interpolate_s_grid_full_mod(theta : jnp.ndarray, phi : jnp.ndarray, nfp : i
 
 
 @partial(jax.jit)
-def _cartesian_position_interpolating_s_grid_full_mod(flux_surface : FluxSurface, s_grid : jnp.ndarray, theta : jnp.ndarray, phi : jnp.ndarray):    
+def _cartesian_position_interpolating_s_grid_full_mod(flux_surface : ParametrisedSurface, s_grid : jnp.ndarray, theta : jnp.ndarray, phi : jnp.ndarray):    
     '''
     Compute the Cartesian position of a flux surface at interpolated s values. 
     
@@ -1082,7 +1116,7 @@ def _cartesian_position_interpolating_s_grid_full_mod(flux_surface : FluxSurface
     If the tangent is desired, use dx_dtheta_d_varying instead of the base _dx_dtheta in flux_surface_base.py. This takes into account the ds/dtheta term.
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : ParametrisedSurface
         Flux surface to compute position on.
     s_grid : jnp.ndarray [n_theta_sampled, n_phi_sampled]
         Grid of s values to interpolate from. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)
@@ -1095,12 +1129,12 @@ def _cartesian_position_interpolating_s_grid_full_mod(flux_surface : FluxSurface
     positions : jnp.ndarray [..., 3]
         Cartesian positions at (theta, phi) with interpolated s values.        
     '''
-    return flux_surface.cartesian_position(_interpolate_s_grid_full_mod(theta,phi, flux_surface.settings.nfp, s_grid), theta, phi)
+    return flux_surface.cartesian_position(_interpolate_s_grid_full_mod(theta,phi, flux_surface.nfp, s_grid), theta, phi)
 
 _dx_dtheta_interpolating_s_grid_full_mod = jax.jit(jnp.vectorize(jax.jacfwd(_cartesian_position_interpolating_s_grid_full_mod, argnums=2), excluded=(0,1), signature = "(),()->(3)"))
 
 @partial(jax.jit)
-def _arc_length_theta_interpolating_s_grid_full_mod(flux_surface : FluxSurface, s_grid : jnp.ndarray, theta : jnp.ndarray, phi : jnp.ndarray):
+def _arc_length_theta_interpolating_s_grid_full_mod(flux_surface : ParametrisedSurface, s_grid : jnp.ndarray, theta : jnp.ndarray, phi : jnp.ndarray):
     '''
     Compute the arc length derivative with respect to theta of a flux surface at interpolated s values. 
     
@@ -1108,7 +1142,7 @@ def _arc_length_theta_interpolating_s_grid_full_mod(flux_surface : FluxSurface, 
     
     Parameters:
     -----------
-    flux_surface : FluxSurface
+    flux_surface : ParametrisedSurface
         Flux surface to compute position on.
     s_grid : jnp.ndarray [n_theta_sampled, n_phi_sampled]
         Grid of s values to interpolate from. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)   
@@ -1124,7 +1158,7 @@ def _arc_length_theta_interpolating_s_grid_full_mod(flux_surface : FluxSurface, 
     return jnp.linalg.norm(_dx_dtheta_interpolating_s_grid_full_mod(flux_surface, s_grid, theta, phi), axis=-1)
 
 @partial(jax.jit, static_argnums = (2))
-def _arc_length_theta_interpolating_s_grid_full_mod_finite_difference(flux_surface : FluxSurface, s_grid : jnp.ndarray, n_theta : jnp.ndarray, phi : float):
+def _arc_length_theta_interpolating_s_grid_full_mod_finite_difference(flux_surface : ParametrisedSurface, s_grid : jnp.ndarray, n_theta : jnp.ndarray, phi : float):
     '''
     Compute the arc length derivative with respect to theta of a flux surface at interpolated s values using finite differences. 
 
@@ -1149,7 +1183,7 @@ def _arc_length_theta_interpolating_s_grid_full_mod_finite_difference(flux_surfa
     '''
     
     theta_grid = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    positions  = flux_surface.cartesian_position(_interpolate_s_grid_full_mod(theta_grid, phi, flux_surface.settings.nfp, s_grid), theta_grid, phi)
+    positions  = flux_surface.cartesian_position(_interpolate_s_grid_full_mod(theta_grid, phi, flux_surface.nfp, s_grid), theta_grid, phi)
     du         = theta_grid[1] - theta_grid[0]
     x          = [jnp.roll(positions, i, axis=0) for i in [0,1,2,3,4,-4,-3,-2,-1]]
     return jnp.linalg.norm(1 /280 * x[-4] + -4 / 105 * x[-3] +  1/5 * x[-2] + -4/5 * x[-1] + 4/5 * x[1] + -1/5 * x[2] + 4/105 * x[3] + -1/280 * x[4], axis=1)  / du    
