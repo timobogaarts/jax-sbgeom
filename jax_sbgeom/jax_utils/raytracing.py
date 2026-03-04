@@ -536,14 +536,19 @@ def ray_intersects_aabb(origin : jnp.ndarray, direction : jnp.ndarray, aabb : jn
     inv_dir = jnp.where(direction == 0.0, jnp.inf, 1.0 / direction)  # precompute to avoid divides
     tmin = (aabb[..., 0, :] - origin) * inv_dir
     tmax = (aabb[..., 1, :] - origin) * inv_dir
-
+    
     # if direction is negative, swap
     t1 = jnp.minimum(tmin, tmax)
     t2 = jnp.maximum(tmin, tmax)
 
     t_enter = jnp.max(t1, axis=-1)
     t_exit  = jnp.min(t2, axis=-1)
-    hit = (t_exit >= jnp.maximum(t_enter, 0.0))
+    hit = (t_exit >= jnp.maximum(t_enter, 0.0))    
+    hit = jnp.logical_or(hit, jnp.any(jnp.isnan(jnp.array([t_enter, t_exit])))) 
+    # ugly; but for slab parallel it ensures it traverses the BVH further and does not miss triangles.
+    # this only happens in very very rare cases anyway; almost never is the direction slab parallel (i.e. exactly 0.0 in one of the components).
+    
+    
     return hit#, t_enter, t_exit
 
 @jax.jit
@@ -741,7 +746,7 @@ ray_traversal_bvh_vectorized = jax.jit(jnp.vectorize(ray_traversal_bvh_single, e
 # =========================================================================================================
 
 @jax.jit
-def ray_triangle_intersection_single(point : jnp.ndarray, direction : jnp.ndarray, triangle : jnp.ndarray, eps=1e-8):
+def ray_triangle_intersection_single(point : jnp.ndarray, direction : jnp.ndarray, triangle : jnp.ndarray, eps=1e-8, eps_bary_center = 1e-8):
     """
     Compute intersections of one ray with one trianlge
 
@@ -759,6 +764,7 @@ def ray_triangle_intersection_single(point : jnp.ndarray, direction : jnp.ndarra
     t:  
         distance along ray (jnp.inf if no hit)    
     """
+    print("WHTJK")
     v0 = triangle[0, :]
     v1 = triangle[1, :]
     v2 = triangle[2, :]
@@ -781,9 +787,9 @@ def ray_triangle_intersection_single(point : jnp.ndarray, direction : jnp.ndarra
     t =  jnp.dot(e2, qvec) * inv_det #(,)
 
     mask = (valid_det &
-            (u >= 0.0) &
-            (v >= 0.0) &
-            ((u + v) <= 1.0) &
+            (u >= -eps_bary_center) &
+            (v >= -eps_bary_center) &
+            ((u + v) <= 1.0 + eps_bary_center) &
             (t > eps))
 
     t = jnp.where(mask, t, jnp.inf)

@@ -345,6 +345,7 @@ def create_fourier_representation_d_interp(flux_surface : FluxSurface, d : jnp.n
         Settings of the Fourier representation (mpol, ntor, nfp).
 
     '''
+    assert d.ndim < 4, f"d must be a scalar or 1D, 2D or 3D array but got shape {d.shape}"
     d = jnp.array(d)
     new_settings = FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.settings.nfp)
     if d.ndim == 0 or d.ndim == 2:
