@@ -19,6 +19,7 @@ author = 'Timo Bogaarts'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "myst_nb",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
@@ -48,3 +49,6 @@ autodoc_default_options = {
 
 typehints_use_signature = True # show typehints in the function signature.
 add_module_names = False # removes the long jax_sbgeom.module.name from the docs.
+
+nb_execution_mode = "cache"
+nb_execution_cache_path = ".jupyter_cache"
