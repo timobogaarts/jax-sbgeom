@@ -37,13 +37,13 @@ def _coil_surface_distance_loss(s_arr : jnp.ndarray, coilset : CoilSet):
 
         Normalised by the distance between coil centres.
 
-        Parameters:
+        Parameters
         ----------
         s_arr: jnp.ndarray [n_coils, n_s]
             Sampled arc length positions along each coil
         coilset: CoilSet
             CoilSet containing the coils
-        Returns:
+        Returns
         -------
         loss: float
             Distance loss, lower is better  
@@ -61,11 +61,11 @@ def _uniformity_loss(x : jnp.ndarray):
 
         \\sum_{ij} (d_{ij} - 1/(N_i -1))^2
 
-        Parameters:
+        Parameters
         ----------
         x: jnp.ndarray [n_coils, n_samples]
             Points along each coil
-        Returns:
+        Returns
         -------
         loss: float
             Uniformity loss, lower is better        
@@ -84,7 +84,7 @@ def _repulsion_loss(x : jnp.ndarray, p : int = 2, eps : float = 1e-6):
 
         It is normalised by the repulsion loss of a uniform distribution minus one, so that a uniform distribution gives 0 repulsion loss (ideal).
 
-        Parameters:
+        Parameters
         ----------
         x: jnp.ndarray [n_coils, n_samples]
             Points along each coil
@@ -92,7 +92,7 @@ def _repulsion_loss(x : jnp.ndarray, p : int = 2, eps : float = 1e-6):
             Power of the repulsion
         eps: float
             Small number to avoid division by zero
-        Returns:
+        Returns
         -------
         loss: float
             Repulsion loss, lower is better
@@ -117,13 +117,13 @@ def _create_total_s(d_i : jnp.ndarray, n_coils : int):
 
     Simply reshapes the d_i vector and computes s using softplus regularization.
 
-    Parameters:
+    Parameters
     ----------
     d_i : jnp.ndarray [n_coils * n_samples]
         Unregularized segment lengths between consecutive points along each coil.
     n_coils : int
         Number of coils.
-    Returns:
+    Returns
     -------
     s_c : jnp.ndarray [n_coils, n_samples]
         Normalized cumulative arc length along each coil, ranging from 0 to 1.        
@@ -136,7 +136,7 @@ def coil_surface_loss(d_i : jnp.ndarray, coilset : CoilSet, n_coils : int, unifo
     '''
     Compute total coil surface loss.
 
-    Parameters:
+    Parameters
     ----------
     d_i : jnp.ndarray [n_coils * n_samples]
         Unregularized segment lengths between consecutive points along each coil.
@@ -148,7 +148,7 @@ def coil_surface_loss(d_i : jnp.ndarray, coilset : CoilSet, n_coils : int, unifo
         Weight of the uniformity loss.
     repulsive_loss_weight : float
         Weight of the repulsion loss.
-    Returns:
+    Returns
     -------
     total_loss : float
         Total coil surface loss.
@@ -162,7 +162,7 @@ def _create_coil_surface_loss_function(coilset : CoilSet, uniformity_penalty : f
     '''
     Create a coil surface loss function for optimization. It only depends on the d_i parameters.
 
-    Parameters:
+    Parameters
     ----------
     coilset : CoilSet
         CoilSet containing the coils.
@@ -170,7 +170,7 @@ def _create_coil_surface_loss_function(coilset : CoilSet, uniformity_penalty : f
         Weight of the uniformity loss.
     repulsive_penalty : float
         Weight of the repulsion loss.
-    Returns:
+    Returns
     -------
     loss_fn : function
         Loss function that takes d_i parameters as input and returns the total coil surface loss.   
@@ -192,7 +192,7 @@ def optimize_coil_surface(coilset : CoilSet, uniformity_penalty : float = 1.0, r
     Optimize the sampling points of a CoilSet for minimum distance between adjacent coils with penalties for non-uniformity and closeness of points.
     This ensures that the optimizer does not find pathological solutions where points cluster together. The CoilSet is first ordered in phi and ensured to have positive orientation.
 
-    Parameters:
+    Parameters
     ----------
     coilset : CoilSet
         CoilSet containing the coils to optimize.
@@ -204,7 +204,7 @@ def optimize_coil_surface(coilset : CoilSet, uniformity_penalty : float = 1.0, r
         Number of sample points per coil.
     optimization_settings : OptimizationSettings
         Settings for the optimization process.
-    Returns:
+    Returns
     -------
     optimized_params : jnp.ndarray
         Optimized parameters for the coil surface.
@@ -224,14 +224,14 @@ def _cws_fourier(positions_cws : jnp.ndarray, n_points_phi : int):
     '''
     Interpolate coil winding surface positions to Fourier representation.
 
-    Parameters:
+    Parameters
     ----------
     positions_cws : jnp.ndarray [n_points_per_coil, n_coils, 3]
         Positions of the coil winding surface mesh points.
     n_points_phi : int
         Number of points in the toroidal direction.
     
-    Returns:
+    Returns
     -------
     positions_cws_fourier : jnp.ndarray [n_points_per_coil, n_points_phi, 3]
         Positions of the coil winding surface mesh points in Fourier representation.
@@ -246,14 +246,14 @@ def _cws_direct(positions_cws : jnp.ndarray, n_points_phi : int):
     '''
     Create a direct coil winding surface mesh. Uses only the points on the coils themselves.
 
-    Parameters:
+    Parameters
     ----------
     positions_cws : jnp.ndarray [n_points_per_coil, n_coils, 3]
         Positions of the coil winding surface mesh points.
     n_points_phi : int
         Number of points in the toroidal direction. Not used here.
     
-    Returns:
+    Returns
     -------
     positions_cws_fourier : jnp.ndarray [n_points_per_coil, n_coils, 3]
         Positions of the coil winding surface mesh points in Fourier representation.
@@ -265,14 +265,14 @@ def _cws_spline(positions_cws : jnp.ndarray, n_points_phi : int):
     '''
     Create a interpolating spline coil winding surface mesh.
 
-    Parameters:
+    Parameters
     ----------
     positions_cws : jnp.ndarray [n_points_per_coil, n_coils, 3]
         Positions of the coil winding surface mesh points.
     n_points_phi : int
         Number of points in the toroidal direction.
     
-    Returns:
+    Returns
     -------
     positions_cws_spline : jnp.ndarray [n_points_per_coil, n_points_phi, 3]
         Positions of the coil winding surface mesh points in spline representation.
@@ -295,7 +295,7 @@ def _create_cws_interpolated(coilset : CoilSet, n_points_per_coil : int, d_opt :
     '''
     Sample points on the coilset using optimized d_i parameters.
 
-    Parameters:
+    Parameters
     ----------
     coilset : CoilSet
         CoilSet containing the coils.
@@ -304,7 +304,7 @@ def _create_cws_interpolated(coilset : CoilSet, n_points_per_coil : int, d_opt :
     d_opt : jnp.ndarray
         Optimized parameters for the coil surface.
     
-    Returns:
+    Returns
     -------
     positions_cws : jnp.ndarray [n_points_per_coil, n_coils, 3]
         Positions of the coil winding surface mesh points.
@@ -324,7 +324,7 @@ def _create_coil_winding_surface_from_parameters(ordered_coilset : CoilSet, n_po
     '''
     Create a coil winding surface mesh from a CoilSet and optimized d_i parameters. Uses different methods to create the surface.
 
-    Parameters:
+    Parameters
     ----------
     ordered_coilset : CoilSet
         CoilSet containing the coils to optimize.
@@ -340,7 +340,7 @@ def _create_coil_winding_surface_from_parameters(ordered_coilset : CoilSet, n_po
         - "fourier" uses a fourier transformation on each toroidal line
         - "direct" meshes directly between the coils (no intermediate points)
     
-    Returns:
+    Returns
     -------
     positions : jnp.ndarray [n_points, 3]
         Positions of the coil winding surface mesh points.
@@ -365,7 +365,7 @@ def create_optimized_coil_winding_surface(coilset : CoilSet, n_points_per_coil :
     '''
     Create an optimized coil winding surface mesh from a CoilSet. The CoilSet is first ordered in phi and ensured to have positive orientation.
     
-    Parameters:
+    Parameters
     ----------
     coilset : CoilSet
         CoilSet containing the coils to optimize.
@@ -386,7 +386,7 @@ def create_optimized_coil_winding_surface(coilset : CoilSet, n_points_per_coil :
         Number of sample points per coil for the optimization.
     optimization_settings : OptimizationSettings
         Settings for the optimization process.
-    Returns:
+    Returns
     -------
     positions : jnp.ndarray [n_points, 3]
         Positions of the coil winding surface mesh points.
@@ -408,7 +408,7 @@ def create_coil_winding_surface(coilset : CoilSet, n_points_per_coil : int, n_po
     Create a coil winding surface from a CoilSet. The CoilSet is first ordered in phi and ensured to have positive orientation.
 
         
-    Parameters:
+    Parameters
     ----------
     coilset : CoilSet
         CoilSet containing the coils to optimize.
@@ -421,7 +421,7 @@ def create_coil_winding_surface(coilset : CoilSet, n_points_per_coil : int, n_po
         - "spline" uses a 3D periodic spline on each toroidal line, 
         - "fourier" uses a fourier transformation on each toroidal line
         - "direct" meshes directly between the coils (no intermediate points)    
-    Returns:
+    Returns
     -------
     positions : jnp.ndarray [n_points, 3]
         Positions of the coil winding surface mesh points.
@@ -436,7 +436,7 @@ def calculate_normals_from_closest_point_on_mesh(coil : Union[Coil, CoilSet], ex
     '''
     Calculate normals at coil positions by finding the closest points on an external mesh and using that normal.
 
-    Parameters:
+    Parameters
     ----------
     coil : Union[Coil, CoilSet]
         Coil or CoilSet containing the coil(s).
@@ -444,7 +444,7 @@ def calculate_normals_from_closest_point_on_mesh(coil : Union[Coil, CoilSet], ex
         External mesh to find closest points on.
     n_coil_samples : int
         Number of samples along the coil(s).
-    Returns:
+    Returns
     -------
     positions : jnp.ndarray [n_coils, n_coil_samples, 3]
         Positions along the coil(s).

@@ -461,7 +461,7 @@ def _compute_full_rmf(coil : Coil, number_of_rmf_samples : int):
     The radial vectors are computed at uniform arc length intervals (endpoint not included).
     See [1] for computation details.
 
-    Parameters:
+    Parameters
     ----------
     coil : Coil
         Coil object
@@ -562,13 +562,13 @@ def _angle_axis_to_matrix(axis, angle):
     """
     Convert an angle-axis representation to a 3x3 rotation matrix.
 
-    Parameters:
+    Parameters
     ----------
     axis : jnp.ndarray (3,)
         The axis of rotation (should be a unit vector).
     angle : float
         The angle of rotation in radians.   
-    Returns:
+    Returns
     -------
     jnp.ndarray (3, 3)
         The corresponding rotation matrix.
@@ -597,11 +597,11 @@ def _coil_rotation_positive(coil):
     '''
     Check whether the coil rotation is positive (increasing angle when looking at R-Z cross section)
 
-    Parameters:
+    Parameters
     ----------
         coil: Coil
             Coil object to check
-    Returns:
+    Returns
     -------
         bool
             Whether the coil has positive rotation
@@ -624,13 +624,13 @@ def ensure_coil_rotation(coil : Coil, positive_rotation : bool):
     '''
     Ensure that the coils in the coilset are ordered in the same rotation (positive is increasing angle when looking at R-Z cross section)
 
-    Parameters:
+    Parameters
     ----------
         coil: Coil
             Coil object to check
         positive_rotation: bool
             Whether the coil should have positive rotation (if False, negative rotation is enforced)
-    Returns:
+    Returns
         Coil       : Coil with ensured rotation
     '''    
     return jax.lax.cond(_coil_rotation_positive(coil) == positive_rotation , lambda _ : coil, lambda _ : coil.reverse_parametrisation(), operand=None)

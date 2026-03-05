@@ -130,7 +130,7 @@ def _convert_array_to_different_settings(array : jnp.ndarray, new_settings : Flu
     Convert a Fourier representation from one (mpol, ntor) to another (mpol, ntor) by zero-padding or truncating.
     Does not take into account the field-period symmetry: this can thus also be used to convert to different nfp.
 
-    Parameters:
+    Parameters
     ----------
     array : jnp.ndarray
         Array of shape (..., N) where N is the number of Fourier modes in the old representation.   
@@ -138,7 +138,7 @@ def _convert_array_to_different_settings(array : jnp.ndarray, new_settings : Flu
         The new Fourier settings (mpol, ntor).
     old_settings : FluxSurfaceSettings
         The old Fourier settings (mpol, ntor).
-    Returns:
+    Returns
     -------
     array_new : jnp.ndarray
         Array of shape (..., N_new) where N_new is the number of Fourier modes in the new representation.
@@ -168,14 +168,14 @@ def convert_to_different_settings(fluxsurface : FluxSurfaceBase, settings_new : 
     Note that this returns the same type as the input fluxsurface. However, if it is e.g. a FluxSurfaceFourierExtended, the extension data 
     is not converted or used, so the return type will be only the base FluxSurface.
 
-    Parameters:
+    Parameters
     -----------
     fluxsurface : FluxSurfaceBase
         The flux surface to convert.
     settings_new : FluxSurfaceSettings
         The new Fourier settings (mpol, ntor).
 
-    Returns:
+    Returns
     --------
     fluxsurface_new : FluxSurface
         New flux surface with Fourier coefficients in the new (mpol, ntor) representation. Same as type as input fluxsurface.
@@ -190,7 +190,7 @@ def _convert_to_equal_arclength_single(flux_surface : FluxSurfaceBase, n_theta :
     This requires a full FluxSurface instead of only settings and data, as the position function is needed. This makes batching easier as well:
     the function can be vmapped over FluxSurface objects. (see convert_to_equal_arclength)
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         Flux surface to convert.
@@ -200,7 +200,7 @@ def _convert_to_equal_arclength_single(flux_surface : FluxSurfaceBase, n_theta :
         Number of toroidal modes in the Fourier representation [= n_phi // 2]
     n_theta_s_arclength : int
         Number of poloidal points to use for the arclength sampling grid.
-    Returns:
+    Returns
     --------
     flux_surface_data : FluxSurfaceData
         Fourier representation of the sampled flux surface.
@@ -243,7 +243,7 @@ def create_fourier_representation(flux_surface : FluxSurfaceBase, s : jnp.ndarra
     '''
     Create a Fourier representation of a flux surface at given (s, theta) grid points.
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         Flux_Surface to create the Fourier representation of.
@@ -251,7 +251,7 @@ def create_fourier_representation(flux_surface : FluxSurfaceBase, s : jnp.ndarra
         Radial coordinate(s) at which to sample the flux surface. If an array, must have the same shape as theta_grid.
     theta_grid : jnp.ndarray [n_theta, n_phi]
         Grid of poloidal angles at which to sample the flux surface.    
-    Returns:
+    Returns
     --------
     flux_surface_data : FluxSurfaceData
         Fourier representation of the sampled flux surface.
@@ -289,7 +289,7 @@ def _create_fourier_representation_d_interp_single(flux_surfaces : FluxSurfaceBa
     Create a Fourier representation of an extended flux surface with an interpolated extension distance. 
     
 
-    Parameters:
+    Parameters
     -----------
     flux_surfaces : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
@@ -299,7 +299,7 @@ def _create_fourier_representation_d_interp_single(flux_surfaces : FluxSurfaceBa
         Number of poloidal points in the output Fourier representation.
     n_phi : int
         Number of toroidal points in the output Fourier representation.
-    Returns:
+    Returns
     --------
     
     '''
@@ -325,7 +325,7 @@ def create_fourier_representation_d_interp(flux_surface : FluxSurfaceBase, d : j
     Can be batched over d: if d is a scalar or 2D array, a single flux surface is created.
     If d is a 1D or 3D array, multiple flux surfaces are created (batched).
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi out for FFT)
@@ -337,7 +337,7 @@ def create_fourier_representation_d_interp(flux_surface : FluxSurfaceBase, d : j
         Number of poloidal points in the output Fourier representation.
     n_phi : int
         Number of toroidal points in the output Fourier representation.
-    Returns:
+    Returns
     --------
     flux_surface_data : FluxSurfaceData
         Fourier representation of the sampled flux surface.
@@ -361,7 +361,7 @@ def create_flux_surface_d_interp(flux_surface : FluxSurfaceBase, d : jnp.ndarray
     '''
     Convenience function of create_fourier_representation_d_interp + type_c.from_data_settings_full, returning a FluxSurface of given type.
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormal
@@ -371,7 +371,7 @@ def create_flux_surface_d_interp(flux_surface : FluxSurfaceBase, d : jnp.ndarray
         Number of poloidal points in the output Fourier representation.
     n_phi : int
         Number of toroidal points in the output Fourier representation.
-    Returns:
+    Returns
     --------
     flux_surface : FluxSurface
         Flux surface with Fourier representation.   
@@ -386,7 +386,7 @@ def create_extended_flux_surface_d_interp(flux_surface : FluxSurfaceBase, d : jn
 
     Compared to create_flux_surface_d_interp, this function directly returns a FluxSurfaceFourierExtended.
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormal
@@ -396,7 +396,7 @@ def create_extended_flux_surface_d_interp(flux_surface : FluxSurfaceBase, d : jn
         Number of poloidal points in the output Fourier representation.
     n_phi : int
         Number of toroidal points in the output Fourier representation.
-    Returns:
+    Returns
     --------
     flux_surface_extended : FluxSurfaceFourierExtended
         Extended flux surface with Fourier representation.
@@ -408,7 +408,7 @@ def create_fourier_representation_d_interp_equal_arclength(flux_surface : FluxSu
     '''
     Convenience function of create_fourier_representation_d_interp + convert_to_equal_arclength
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
@@ -420,7 +420,7 @@ def create_fourier_representation_d_interp_equal_arclength(flux_surface : FluxSu
         Number of toroidal points in the output Fourier representation.
     n_theta_s_arclength : int
         Number of poloidal points to use for the arclength parametrization.
-    Returns:
+    Returns
     --------
     flux_surface_data : FluxSurfaceData
         Fourier representation of the sampled flux surface.
@@ -433,7 +433,7 @@ def create_flux_surface_d_interp_equal_arclength(flux_surface : FluxSurfaceBase,
     '''
     Convenience function of create_fourier_representation_d_interp + convert_to_equal_arclength + type_c.from_data_settings_full, returning a FluxSurface of given type.
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase  
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
@@ -445,7 +445,7 @@ def create_flux_surface_d_interp_equal_arclength(flux_surface : FluxSurfaceBase,
         Number of toroidal points in the output Fourier representation.
     n_theta_s_arclength : int
         Number of poloidal points to use for the arclength parametrization.
-    Returns:
+    Returns
     --------
     flux_surface : FluxSurface
         Flux surface with Fourier representation sampled on an equal arclength poloidal grid.
@@ -460,7 +460,7 @@ def create_extended_flux_surface_d_interp_equal_arclength(flux_surface : FluxSur
 
     Compared to create_flux_surface_d_interp_equal_arclength, this function directly returns a FluxSurfaceFourierExtended.
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         Flux_Surface to extend using the distance function. Flux surface must be of type FluxSurfaceNormalExtendedNoPhi or FluxSurfaceNormalExtendedConstantPhi to ensure valid results (phi_in must be phi_out for FFT)
@@ -474,7 +474,7 @@ def create_extended_flux_surface_d_interp_equal_arclength(flux_surface : FluxSur
         Number of toroidal points in the output Fourier representation.
     n_theta_s_arclength : int
         Number of poloidal points to use for the arclength parametrization.
-    Returns:
+    Returns
     --------
     flux_surface_extended : FluxSurfaceFourierExtended
         Extended flux surface with Fourier representation sampled on an equal arclength poloidal grid.

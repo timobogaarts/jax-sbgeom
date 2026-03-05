@@ -13,7 +13,7 @@ def generate_thickness_matrix(flux_surface : FluxSurfaceNormalExtendedNoPhi, mes
 
     Uses the internal raytracing utilities to compute the minimum distance from the flux surface to the mesh along the normal directions.
 
-    Parameters:
+    Parameters
     ----------
     flux_surface : FluxSurfaceNormalExtendedNoPhi
         Flux surface to compute thickness from.
@@ -23,7 +23,7 @@ def generate_thickness_matrix(flux_surface : FluxSurfaceNormalExtendedNoPhi, mes
         Number of poloidal points.
     n_phi : int
         Number of toroidal points.  
-    Returns:
+    Returns
     -------
     theta : jnp.ndarray [n_theta, n_phi]
         Poloidal angles of the thickness matrix.
@@ -109,7 +109,7 @@ def convert_full_module_points_multiple_full_module(points_full_module : jnp.nda
     '''
     Convert points from a full module to multiple full modules. 
         
-    Parameters:
+    Parameters
     -----------
     points_full_module : jnp.ndarray
         The points of the full module, shape [..., n_phi_points, 3]
@@ -164,7 +164,7 @@ def convert_half_module_points_to_multiple_full_modules_mesh(points_half_module,
     '''
     Convert a mesh defined in a half module to multiple full modules. This is a utility function that combines the convert_half_module_points_to_full_module and convert_full_module_points_multiple_full_module functions for convenience.
 
-    Parameters:
+    Parameters
     -----------
     points_half_module : jnp.ndarray
         The points of the half module, defined as an array of shape [ n_theta_points, n_phi_points, 3].

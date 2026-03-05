@@ -470,7 +470,7 @@ def _mesh_surfaces_closed(flux_surfaces: ParametrisedSurface,
 
     Internal function. Use the convenience function mesh_closed_surfaces below to automatically set include_axis and full angle based on the flux surface settings.
 
-    Parameters:
+    Parameters
     ----------
     flux_surfaces : ParametrisedSurface
         The parametrized surface object containing the parameterization.
@@ -492,7 +492,7 @@ def _mesh_surfaces_closed(flux_surfaces: ParametrisedSurface,
         The number of toroidal points.
     n_cap : int
         The number of radial points in the caps if needed.
-    Returns:
+    Returns
     -------
     points : jnp.ndarray    
         An array of shape (n_points, 3) containing the Cartesian coordinates of the mesh points.
@@ -547,7 +547,7 @@ def mesh_poloidal_plane(flux_surface : ParametrisedSurface, s_layers : jnp.ndarr
 
     Connectivity is ordered first axis wedges if present, then each closed theta strip, then increasing s.
 
-    Parameters:
+    Parameters
     flux_surface : ParametrisedSurface
         The parametrized surface object containing the parameterization.
     s_layers : jnp.ndarray
@@ -556,7 +556,7 @@ def mesh_poloidal_plane(flux_surface : ParametrisedSurface, s_layers : jnp.ndarr
         The toroidal angle (in radians) at which to mesh the poloidal plane.
     n_theta : int
         The number of poloidal points.
-    Returns:
+    Returns
     -------
     points : jnp.ndarray    
         An array of shape (n_points, 3) containing the Cartesian coordinates of the mesh points.
@@ -620,7 +620,7 @@ def _mesh_watertight_layers(flux_surfaces : ParametrisedSurface, s_values : jnp.
     '''
     Mesh watertight flux surface layers at the given s_values with n_theta poloidal and n_phi toroidal points.
 
-    Parameters:
+    Parameters
     ----------
     flux_surfaces : ParametrisedSurface
         The parametrized surface object containing the parameterization.
@@ -636,7 +636,7 @@ def _mesh_watertight_layers(flux_surfaces : ParametrisedSurface, s_values : jnp.
         The number of poloidal points.
     n_phi : int
         The number of toroidal points.
-    Returns:
+    Returns
     -------
     points : jnp.ndarray    
         An array of shape (n_points, 3) containing the Cartesian coordinates of the mesh points.
@@ -710,14 +710,14 @@ def _tetrahedral_open_cube(n_x : int, n_y : int, n_z : int):
     The resulting tetrahedra are implicitly ordered as:
         [n_x -1, n_y -1, n_z -1, 6, 4] where the last two dimensions are the tetrahedron index (0 to 5) and the vertices (0 to 3).
     
-    Parameters:
+    Parameters
     n_x : int
         Number of points in x direction.
     n_y : int
         Number of points in y direction.
     n_z : int
         Number of points in z direction.
-    Returns:
+    Returns
     -------
     jnp.ndarray [n_tetrahedra = (n_z - 1) * (n_y -1 ) * (n_x - 1) * 6,  4]
         An array containing the tetrahedral connectivity.        

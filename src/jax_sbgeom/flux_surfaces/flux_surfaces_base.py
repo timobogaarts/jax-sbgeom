@@ -103,7 +103,7 @@ def _check_whether_make_normals_point_outwards_required(Rmnc : jnp.ndarray, Zmns
         a. dZ_dtheta > 0 at theta = 0 -> normals point inwards -> reverse theta
         b. dZ_dtheta < 0 at theta = 0 -> normals point outwards -> no change
 
-    Parameters:
+    Parameters
     -----------
     Rmnc : jnp.ndarray
         Array of radial Fourier coefficients. Shape (nsurf, nmodes)
@@ -112,7 +112,7 @@ def _check_whether_make_normals_point_outwards_required(Rmnc : jnp.ndarray, Zmns
     mpol_vector : jnp.ndarray
         Array of poloidal mode numbers. Shape (nmodes,)
     
-    Returns:
+    Returns
     --------
     flip_theta : bool
         Whether to reverse theta to ensure normals point outwards.
@@ -144,7 +144,7 @@ def _reverse_theta_single(m_vec, n_vec, coeff_vec, cosine_sign : bool):
 
     Changes the Fourier coefficients such that theta is replaced by -theta.
 
-    Parameters:
+    Parameters
     -----------
     m_vec : jnp.ndarray
         Array of poloidal mode numbers.
@@ -154,7 +154,7 @@ def _reverse_theta_single(m_vec, n_vec, coeff_vec, cosine_sign : bool):
         Array of Fourier coefficients. (Rmnc or Zmns)
     cosine_sign : bool
         If True, the coefficients correspond to cosine terms. If False, they correspond to sine terms.
-    Returns:
+    Returns
     --------
     new_coeff_vec : jnp.ndarray
         The modified Fourier coefficients after reversing theta.
@@ -232,11 +232,11 @@ class FluxSurfaceData:
 def _data_modes_settings_from_hdf5(filename : str, make_normals_point_outwards : bool = True):
     """Load a FluxSurface from an VMEC-type HDF5 file.
 
-        Parameters:
+        Parameters
         ----------
         filename : str
             Path to the HDF5 file.
-        Returns:
+        Returns
         -------
         FluxSurface
             The loaded FluxSurface object.
@@ -315,11 +315,11 @@ class FluxSurfaceBase(ParametrisedSurface):
         '''
         Load a FluxSurface from an VMEC-type HDF5 file.
 
-        Parameters:
+        Parameters
         ----------
         filename : str
             Path to the HDF5 file.
-        Returns:
+        Returns
         -------
         FluxSurface
             The loaded FluxSurface object.
@@ -333,11 +333,11 @@ class FluxSurfaceBase(ParametrisedSurface):
         Create a FluxSurface from another FluxSurface (copy constructor).
         Can be used to convert between subclasses of FluxSurface.
 
-        Parameters:
+        Parameters
         -----------
         flux_surface_base : FluxSurface
             The input FluxSurface to copy from.
-        Returns:
+        Returns
         --------
         FluxSurface
             The copied FluxSurface.
@@ -349,7 +349,7 @@ class FluxSurfaceBase(ParametrisedSurface):
         '''
         Create a FluxSurface from Fourier coefficients and settings. Optionally, modify the coefficients such that normals point outwards (default=True)
 
-        Parameters:
+        Parameters
         -----------
         Rmnc : jnp.ndarray
             Array of radial Fourier coefficients. Shape (nsurf, nmodes)
@@ -359,7 +359,7 @@ class FluxSurfaceBase(ParametrisedSurface):
             Settings object containing parameters mpol, ntor, nfp   
         make_normals_point_outwards : bool
             Whether to modify the Fourier coefficients such that normals point outwards. Default is True.
-        Returns:
+        Returns
         --------
         FluxSurface
             The created FluxSurface.
@@ -373,13 +373,13 @@ class FluxSurfaceBase(ParametrisedSurface):
         '''
         Create a FluxSurface from FluxSurfaceData and FluxSurfaceSettings.
 
-        Parameters:
+        Parameters
         -----------
         data : FluxSurfaceData
             Data object containing the Fourier coefficients Rmnc and Zmns
         settings : FluxSurfaceSettings
             Settings object containing parameters mpol, ntor, nfp   
-        Returns:
+        Returns
         --------
         FluxSurface
             The created FluxSurface.
@@ -392,13 +392,13 @@ class FluxSurfaceBase(ParametrisedSurface):
         Create a FluxSurface from FluxSurfaceData and FluxSurfaceSettings. In this function, the data is ensured to be 2D. This is 
         required for some functions that interpolate between the different surfaces.
 
-        Parameters:
+        Parameters
         -----------
         data : FluxSurfaceData
             Data object containing the Fourier coefficients Rmnc and Zmns
         settings : FluxSurfaceSettings
             Settings object containing parameters mpol, ntor, nfp   
-        Returns:
+        Returns
         --------
         FluxSurface
             The created FluxSurface.
@@ -420,7 +420,7 @@ class FluxSurface(FluxSurfaceBase):
         '''
         Cylindrical position on the flux surface as a function of (s, theta, phi)
 
-        Parameters:
+        Parameters
         -----------
         s : jnp.ndarray
             Surface index or normalized flux label
@@ -428,7 +428,7 @@ class FluxSurface(FluxSurfaceBase):
             Poloidal angle(s)
         phi : jnp.ndarray
             Toroidal angle(s)
-        Returns:
+        Returns
         --------
         jnp.ndarray
             Cylindrical position(s) on the flux surface [R, Z, phi]
@@ -439,7 +439,7 @@ class FluxSurface(FluxSurfaceBase):
         '''
         Cartesian position on the flux surface as a function of (s, theta, phi)
 
-        Parameters:
+        Parameters
         -----------
         s : jnp.ndarray
             Surface index or normalized flux label
@@ -447,7 +447,7 @@ class FluxSurface(FluxSurfaceBase):
             Poloidal angle(s)
         phi : jnp.ndarray
             Toroidal angle(s)
-        Returns:
+        Returns
         --------
         jnp.ndarray
             Cartesian position(s) on the flux surface [x, y, z]
@@ -458,7 +458,7 @@ class FluxSurface(FluxSurfaceBase):
         '''
         Normal vector on the flux surface as a function of (s, theta, phi)
 
-        Parameters:
+        Parameters
         -----------
         s : jnp.ndarray
             Surface index or normalized flux label
@@ -466,7 +466,7 @@ class FluxSurface(FluxSurfaceBase):
             Poloidal angle(s)
         phi : jnp.ndarray
             Toroidal angle(s)
-        Returns:
+        Returns
         --------
         jnp.ndarray
             Normal vector(s) on the flux surface
@@ -477,7 +477,7 @@ class FluxSurface(FluxSurfaceBase):
         '''
         Principal curvatures on the flux surface as a function of (s, theta, phi)
 
-        Parameters:
+        Parameters
         -----------
         s : jnp.ndarray
             Surface index or normalized flux label
@@ -485,7 +485,7 @@ class FluxSurface(FluxSurfaceBase):
             Poloidal angle(s)   
         phi : jnp.ndarray
             Toroidal angle(s)
-        Returns:
+        Returns
         --------
         jnp.ndarray
             Principal curvatures(s) on the flux surface
@@ -498,11 +498,11 @@ def make_2d_flux_surface(fs : FluxSurfaceBase) -> FluxSurfaceBase:
     This allows you to use the interpolation-based methods that require 2D data. Interpolation on one surface will 
     just return the single surface.
 
-    Parameters:
+    Parameters
     -----------
     fs : FluxSurfaceBase
         The input FluxSurfaceBase with 1D data.
-    Returns:
+    Returns
     --------
     FluxSurfaceBase
         The output FluxSurfaceBase with 2D data.
@@ -533,13 +533,13 @@ class ToroidalExtent:
         '''
         Create a ToroidalExtent representing half a field period.
 
-        Parameters:
+        Parameters
         ----------- 
         flux_surface : FluxSurface
             The flux surface for which to create the toroidal extent.
         dphi : float
             An optional offset to add to both the start and end angles.
-        Returns:
+        Returns
         --------
         ToroidalExtent
             The created ToroidalExtent.
@@ -551,13 +551,13 @@ class ToroidalExtent:
         '''
         Create a ToroidalExtent representing a full field period.
 
-        Parameters:
+        Parameters
         ----------- 
         flux_surface : FluxSurface
             The flux surface for which to create the toroidal extent.
         dphi : float
             An optional offset to add to both the start and end angles.
-        Returns:
+        Returns
         --------
         ToroidalExtent
             The created ToroidalExtent.
@@ -569,7 +569,7 @@ class ToroidalExtent:
         '''
         Create a ToroidalExtent representing the full toroidal angle [0, 2pi].
 
-        Returns:
+        Returns
         --------
         ToroidalExtent
             The created ToroidalExtent.
@@ -580,7 +580,7 @@ class ToroidalExtent:
         '''
         Whether the toroidal extent represents a full 2pi angle. Used for creating closed meshes.
 
-        Returns:
+        Returns
         --------
         bool
             True if the toroidal extent represents a full 2pi angle, False otherwise.
@@ -601,7 +601,7 @@ def _cylindrical_position_direct(flux_surface : FluxSurfaceBase, theta, phi):
     '''
     Cylindrical position on the flux surface as a function of (theta, phi) for a single surface (1D data).
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurface
         The flux surface object.
@@ -609,7 +609,7 @@ def _cylindrical_position_direct(flux_surface : FluxSurfaceBase, theta, phi):
         Poloidal angle(s)
     phi : jnp.ndarray
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         Cylindrical position(s) on the flux surface [R, Z, phi]
@@ -646,7 +646,7 @@ def _cartesian_position_direct(flux_surface : FluxSurfaceBase, theta, phi):
     '''
     Cartesian position on the flux surface as a function of (theta, phi) for a single surface (1D data).
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object.
@@ -654,7 +654,7 @@ def _cartesian_position_direct(flux_surface : FluxSurfaceBase, theta, phi):
         Poloidal angle(s)
     phi : jnp.ndarray
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         Cartesian position(s) on the flux surface [x, y, z]
@@ -669,7 +669,7 @@ def _arc_length_theta_direct(flux_surface : FluxSurfaceBase, theta, phi):
     '''
     Arc length with respect to theta on the flux surface as a function of (theta, phi) for a single surface (1D data).
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object.
@@ -677,7 +677,7 @@ def _arc_length_theta_direct(flux_surface : FluxSurfaceBase, theta, phi):
         Poloidal angle(s)
     phi : jnp.ndarray
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         Arc length(s) with respect to theta on the flux surface.
@@ -703,7 +703,7 @@ def _cylindrical_position_interpolated(flux_surface : FluxSurfaceBase,  s,  thet
 
     This function does not parallelize over modes to avoid creating large intermediate arrays, only over points.
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object.
@@ -713,7 +713,7 @@ def _cylindrical_position_interpolated(flux_surface : FluxSurfaceBase,  s,  thet
         Poloidal angle(s)
     phi : jnp.ndarray
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         Cylindrical position(s) on the flux surface [R, Z, phi]
@@ -765,7 +765,7 @@ def _cartesian_position_interpolated(flux_surface : FluxSurfaceBase, s, theta, p
     
     This function does not parallelize over modes to avoid creating large intermediate arrays, only over points.
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object.
@@ -775,7 +775,7 @@ def _cartesian_position_interpolated(flux_surface : FluxSurfaceBase, s, theta, p
         Poloidal angle(s)
     phi : jnp.ndarray
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         Cartesian position(s) on the flux surface [R, Z, phi]
@@ -790,7 +790,7 @@ def _arc_length_theta(flux_surface : FluxSurfaceBase, s, theta, phi):
     ''''
     Arc length with respect to theta on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object.
@@ -800,7 +800,7 @@ def _arc_length_theta(flux_surface : FluxSurfaceBase, s, theta, phi):
         Poloidal angle(s)
     phi : jnp.ndarray   
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         Arc length(s) with respect to theta on the flux surface.
@@ -823,7 +823,7 @@ def _dx_dphi_cross_dx_dtheta(flux_surface : FluxSurfaceBase, s, theta, phi):
     '''
     Compute the cross product of dr/dphi and dr/dtheta on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object.
@@ -833,7 +833,7 @@ def _dx_dphi_cross_dx_dtheta(flux_surface : FluxSurfaceBase, s, theta, phi):
         Poloidal angle(s)
     phi : jnp.ndarray
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         The cross product of dr/dphi and dr/dtheta on the flux surface.
@@ -850,7 +850,7 @@ def _normal_interpolated(flux_surface : FluxSurfaceBase, s, theta, phi):
     '''
     Normal vector on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object.
@@ -860,7 +860,7 @@ def _normal_interpolated(flux_surface : FluxSurfaceBase, s, theta, phi):
         Poloidal angle(s)
     phi : jnp.ndarray
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         Normal vector(s) on the flux surface.
@@ -882,7 +882,7 @@ def _principal_curvatures_interpolated(flux_surface : FluxSurfaceBase, s, theta,
     '''
     Principal curvatures on the flux surface as a function of (s, theta, phi) for multiple surfaces (2D data).  
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object.
@@ -892,7 +892,7 @@ def _principal_curvatures_interpolated(flux_surface : FluxSurfaceBase, s, theta,
         Poloidal angle(s)
     phi : jnp.ndarray
         Toroidal angle(s)
-    Returns:
+    Returns
     --------
     jnp.ndarray
         Principal curvatures(s) on the flux surface, shape (..., 2) where last index 0 is k1 and last index 1 is k2.
@@ -941,13 +941,13 @@ def _volume_from_fourier(flux_surface : FluxSurfaceBase, s : float):
     The trapezoidal rule is then used to arrive at the final value.
 
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object containing Fourier coefficients and settings.
     s : float
         The normalized flux surface label (0 <= s <= 1).
-    Returns:
+    Returns
     --------
     volume : float
         The volume enclosed by the flux surface at s.
@@ -992,13 +992,13 @@ def _volume_from_fourier_half_mod(flux_surface : FluxSurfaceBase, s : float):
     The trapezoidal rule is then used to arrive at the final value.
 
 
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurfaceBase
         The flux surface object containing Fourier coefficients and settings.
     s : float
         The normalized flux surface label (0 <= s <= 1).
-    Returns:
+    Returns
     --------
     volume : float
         The volume enclosed by the flux surface at s.
@@ -1062,7 +1062,7 @@ def _normalize_theta_phi_full_mod(theta : jnp.ndarray, phi : jnp.ndarray, nfp : 
         theta_norm = (theta % (2pi)) / (2pi)    
         phi_norm   = (phi % (2pi/nfp)) / (2pi/nfp)
 
-    Parameters:
+    Parameters
     -----------
     theta : jnp.ndarray
         Poloidal angles
@@ -1071,7 +1071,7 @@ def _normalize_theta_phi_full_mod(theta : jnp.ndarray, phi : jnp.ndarray, nfp : 
     nfp : int
         Number of field periods in the flux surface
     
-    Returns:
+    Returns
     --------
     theta_norm : jnp.ndarray
         Normalized poloidal angles
@@ -1088,7 +1088,7 @@ def _interpolate_s_grid_full_mod(theta : jnp.ndarray, phi : jnp.ndarray, nfp : i
 
     First normalised theta, phi to the [0, 1] range (within a full module)
 
-    Parameters:
+    Parameters
     -----------
     theta : jnp.ndarray
         Poloidal angles to interpolate at
@@ -1098,7 +1098,7 @@ def _interpolate_s_grid_full_mod(theta : jnp.ndarray, phi : jnp.ndarray, nfp : i
         Number of field periods in the flux surface
     s_grid : jnp.ndarray [n_theta_sampled, n_phi_sampled]
         Grid of s values to interpolate from. Assumed to be full module: i.e. phi in [0, 2pi/nfp], theta in [0, 2pi] (included endpoints)
-    Returns:
+    Returns
     --------
     s_interp : jnp.ndarray
         Interpolated s values at (theta, phi)
@@ -1114,7 +1114,7 @@ def _cartesian_position_interpolating_s_grid_full_mod(flux_surface : Parametrise
     The grid of s values is assumed to be a uniformly sampled full module grid: s[0,0] is (0,0). s[-1,-1] is (2pi, 2pi/nfp)
     
     If the tangent is desired, use dx_dtheta_d_varying instead of the base _dx_dtheta in flux_surface_base.py. This takes into account the ds/dtheta term.
-    Parameters:
+    Parameters
     -----------
     flux_surface : ParametrisedSurface
         Flux surface to compute position on.
@@ -1124,7 +1124,7 @@ def _cartesian_position_interpolating_s_grid_full_mod(flux_surface : Parametrise
         Poloidal angles to compute position at
     phi : jnp.ndarray
         Toroidal angles to compute position at
-    Returns:
+    Returns
     --------
     positions : jnp.ndarray [..., 3]
         Cartesian positions at (theta, phi) with interpolated s values.        
@@ -1140,7 +1140,7 @@ def _arc_length_theta_interpolating_s_grid_full_mod(flux_surface : ParametrisedS
     
     The grid of s values is assumed to be a uniformly sampled full module grid: s[0,0] is (0,0). s[-1,-1] is (2pi, 2pi/nfp)
     
-    Parameters:
+    Parameters
     -----------
     flux_surface : ParametrisedSurface
         Flux surface to compute position on.
@@ -1150,7 +1150,7 @@ def _arc_length_theta_interpolating_s_grid_full_mod(flux_surface : ParametrisedS
         Poloidal angles to compute arc length derivative at
     phi : jnp.ndarray
         Toroidal angles to compute arc length derivative at 
-    Returns:
+    Returns
     --------
     arc_length : jnp.ndarray
         Arc length with respect to theta at (theta, phi) with interpolated s values.        
@@ -1167,7 +1167,7 @@ def _arc_length_theta_interpolating_s_grid_full_mod_finite_difference(flux_surfa
     
     The grid of s values is assumed to be a uniformly sampled full module grid: s[0,0] is (0,0). s[-1,-1] is (2pi, 2pi/nfp)
     
-    Parameters:
+    Parameters
     -----------
     flux_surface : FluxSurface
         Flux surface to compute position on.
@@ -1177,7 +1177,7 @@ def _arc_length_theta_interpolating_s_grid_full_mod_finite_difference(flux_surfa
         Number of theta points to use for finite difference
     phi : float
         Toroidal angle to compute arc length derivative at
-    Returns:
+    Returns
     --------    
     arc_length : jnp.ndarray        
     '''

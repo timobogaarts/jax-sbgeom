@@ -37,7 +37,7 @@ def _flux_surface_reaction_rates(
     All profiles are defined as:
         (p0 - p1) * (1 - s)**alpha + p1
 
-    Parameters:
+    Parameters
     -----------
     s_values : jnp.ndarray
         Normalized flux surface label [0, 1]
@@ -60,7 +60,7 @@ def _flux_surface_reaction_rates(
     Tialpha : float
         Ion temperature profile exponent        
 
-    Returns:
+    Returns
     --------
     
     reaction_rate : jnp.ndarray
@@ -82,7 +82,7 @@ def flux_surface_reaction_rates_simple(s_values : jnp.ndarray, n0 : float, nalph
     Tritium and deuterium densities are assumed equal (1/2 of n(s)). 
     Edge values are set to zero.
 
-    Parameters:
+    Parameters
     -----------
     s_values : jnp.ndarray
         Normalized flux surface label [0, 1]
@@ -96,7 +96,7 @@ def flux_surface_reaction_rates_simple(s_values : jnp.ndarray, n0 : float, nalph
         Ion temperature profile exponent        
     n_samples : int
 
-    Returns:
+    Returns
     --------
     reaction_rate : jnp.ndarray
         Reaction rate profile in m^-3 s^-1

@@ -8,13 +8,13 @@ def _get_norm_centroids(positions : jnp.ndarray, connectivity : jnp.ndarray) -> 
     '''
     Get normalized centroids for the triangles defined by the connectivity on the positions.
 
-    Parameters:
+    Parameters
     ------------
     positions : jnp.ndarray
         (N, 3) array of vertex positions
     connectivity : jnp.ndarray
         (M, 3) array of connectivity indices
-    Returns:
+    Returns
     ------------
     normalized_centroids : jnp.ndarray
         (M, 3) array of normalized centroids
@@ -36,13 +36,13 @@ def _create_morton_codes(normalized_positions : jnp.ndarray) -> jnp.ndarray:
 
     See https://developer.nvidia.com/blog/thinking-parallel-part-iii-tree-construction-gpu/
 
-    Parameters:
+    Parameters
     ------------
     positions : jnp.ndarray
         (N, 3) array of vertex positions
     connectivity : jnp.ndarray
         (M, 3) array of connectivity indices
-    Returns:
+    Returns
     ------------
     morton_codes : jnp.ndarray
         (M,) array of morton codes
@@ -87,13 +87,13 @@ def _common_prefix_length(a : jnp.ndarray, b : jnp.ndarray) -> jnp.ndarray:
 
     Uses jax.lax.clz
 
-    Parameters:
+    Parameters
     -----------
     a : jnp.ndarray
         Unsigned integer array
     b : jnp.ndarray
         Unsigned integer array
-    Returns:
+    Returns
     ----------- 
     jnp.ndarray
         Common prefix length array (scalar)
@@ -109,7 +109,7 @@ def _delta_ij(sorted_morton_codes : jnp.ndarray, i : int, j : int, int_dtype : j
 
     [1] Karras, T. (2012, June). Maximizing parallelism in the construction of BVHs, octrees, and k-d trees. In Proceedings of the Fourth ACM SIGGRAPH/Eurographics Conference on High-Performance Graphics (pp. 33-37).
 
-    Parameters: 
+    Parameters 
     -----------
     sorted_morton_codes : jnp.ndarray
         Sorted morton codes array
@@ -119,7 +119,7 @@ def _delta_ij(sorted_morton_codes : jnp.ndarray, i : int, j : int, int_dtype : j
         Index j
     int_dtype : jnp.dtype
         Integer dtype for the output
-    Returns:
+    Returns
     -----------
     jnp.ndarray
         Delta_ij value (scalar)    
@@ -154,7 +154,7 @@ def _create_parallel_binary_radix_tree(morton_codes : jnp.ndarray):
      
     [1] Karras, T. (2012, June). Maximizing parallelism in the construction of BVHs, octrees, and k-d trees. In Proceedings of the Fourth ACM SIGGRAPH/Eurographics Conference on High-Performance Graphics (pp. 33-37).
 
-    Parameters:
+    Parameters
     '''
     # See https://developer.nvidia.com/blog/parallelforall/wp-content/uploads/2012/11/karras2012hpg_paper.pdf
 
@@ -234,7 +234,7 @@ def _check_binary_radix_tree(left_idx, right_idx):
     '''
     Convenience function to check whether a binary radix tree is actually valid (i.e. one can visit all nodes from the leafs to the root).
 
-    Parameters:
+    Parameters
     left_idx : jnp.ndarray
         Left child indices for each node
     right_idx : jnp.ndarray
@@ -315,14 +315,14 @@ class BVH:
 def build_lbvh(positions, connectivity):
     '''
     Build a Linear Bounding Volume Hierarchy (LBVH) for a given set of 3D positions and connectivity.
-    Parameters:
+    Parameters
     -----------
         positions: jnp.ndarray
             An array of shape (N, 3) representing the 3D coordinates of points.
         connectivity jnp.ndarray:
             An array of shape (M, K) representing the connectivity of the points,
             where each row defines a primitive (e.g., triangle) using indices into the positions array.
-    Returns:
+    Returns
     -----------
         BVH:
             Dataclass containing the LBVH structure with left and right child indices, AABBs, leaf indicators, and ordering information.
@@ -395,7 +395,7 @@ def _probe_bvh_imp(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_h
     '''
     Probe a BVH with a set of points to find which AABBs contain the points.
 
-    Parameters:
+    Parameters
     -----------
     bvh : BVH
         The BVH to probe.
@@ -405,7 +405,7 @@ def _probe_bvh_imp(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_h
         The size of the stack to use for traversal.
     max_hit_size : int
         The maximum number of hits to record per point.
-    Returns:
+    Returns
     -----------
     jnp.ndarray
         An array of shape (N_points, max_hit_size) containing the indices of the AABBs that contain each point. 
@@ -495,7 +495,7 @@ def probe_bvh(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_hit_si
     '''
     Probe a BVH with a set of points to find which AABBs contain the points.
 
-    Parameters:
+    Parameters
     -----------
     bvh : BVH
         The BVH to probe.
@@ -505,7 +505,7 @@ def probe_bvh(bvh : BVH, points : jnp.ndarray, stack_size : int = 64, max_hit_si
         The size of the stack to use for traversal.
     max_hit_size : int
         The maximum number of hits to record per point.
-    Returns:
+    Returns
     -----------
     jnp.ndarray
         An array of shape (N_points, max_hit_size) containing the indices of the AABBs of the original mesh. (not in the BVH order, but in the original order)
@@ -519,7 +519,7 @@ def ray_intersects_aabb(origin : jnp.ndarray, direction : jnp.ndarray, aabb : jn
     '''
     Vectorized function to check ray-AABB intersections using the slab method.
 
-    Parameters:
+    Parameters
     -----------
     origin : jnp.ndarray
         Ray origin of shape (..., 3)
@@ -527,7 +527,7 @@ def ray_intersects_aabb(origin : jnp.ndarray, direction : jnp.ndarray, aabb : jn
         Ray direction of shape (..., 3)
     aabb : jnp.ndarray
         Axis-aligned bounding box of shape (..., 2, 3)  
-    Returns:
+    Returns
     -----------
     jnp.ndarray
         Boolean array indicating whether the ray intersects the AABB.
@@ -556,7 +556,7 @@ def ray_traversal_bvh(bvh : BVH, points : jnp.ndarray, directions : jnp.ndarray,
     '''
     Traverse a BVH with a set of rays defined by points and directions.
 
-    Parameters:
+    Parameters
     -----------
     bvh : BVH
         The BVH to traverse.
@@ -568,7 +568,7 @@ def ray_traversal_bvh(bvh : BVH, points : jnp.ndarray, directions : jnp.ndarray,
         The size of the stack to use for traversal.
     max_hit_size : int
         The maximum number of hits to record per ray.
-    Returns:
+    Returns
     -----------
     jnp.ndarray
         An array of shape (N_points, max_hit_size) containing the indices of the AABBs that the rays intersect. 
@@ -655,7 +655,7 @@ def ray_traversal_bvh_single(bvh : BVH, point : jnp.ndarray, direction : jnp.nda
 
     Use ray_traversal_bvh_vectorized to handle multiple rays. This is only ~10% slower than ray_traversal_bvh for large number of rays.
 
-    Parameters:
+    Parameters
     -----------
     bvh : BVH
         The BVH to traverse.
@@ -667,7 +667,7 @@ def ray_traversal_bvh_single(bvh : BVH, point : jnp.ndarray, direction : jnp.nda
         The size of the stack to use for traversal.
     max_hit_size : int
         The maximum number of hits to record.
-    Returns:
+    Returns
     -----------
     jnp.ndarray
         An array of shape (max_hit_size,) containing the indices of the AABBs that the ray intersects. 
@@ -802,7 +802,7 @@ def find_minimum_distance_to_mesh(points : jnp.ndarray, directions : jnp.ndarray
     '''
     Convenience function to find the minimum distance from rays to a triangle mesh.
 
-    Parameters:
+    Parameters
     -----------
     points : jnp.ndarray
         Ray origins. Shape (N_points, 3)
@@ -811,7 +811,7 @@ def find_minimum_distance_to_mesh(points : jnp.ndarray, directions : jnp.ndarray
     mesh : tuple of (positions, connectivity)
         positions:    jnp.ndarray of shape (M, 3) representing the 3D coordinates of mesh vertices.
         connectivity: jnp.ndarray of shape (K, 3) representing the triangle connectivity of the mesh.
-    Returns:
+    Returns
     -----------
     jnp.ndarray
         An array of shape (N_points,) containing the minimum distance from each ray to the mesh. If no intersection occurs, the distance is jnp.inf.
@@ -833,7 +833,7 @@ def closest_point_on_triangle(p : jnp.ndarray, a : jnp.ndarray, b : jnp.ndarray,
         https://github.com/RenderKit/embree/blob/master/tutorials/common/math/closest_point.h
     but without if conditionals.
 
-    Parameters:
+    Parameters
     ------------
     p : jnp.ndarray
         (3,) array of point coordinates
@@ -843,7 +843,7 @@ def closest_point_on_triangle(p : jnp.ndarray, a : jnp.ndarray, b : jnp.ndarray,
         (3,) array of triangle vertex b coordinates
     c : jnp.ndarray
         (3,) array of triangle vertex c coordinates
-    Returns:
+    Returns
     ------------
     closest_point : jnp.ndarray
         (3,) array of closest point coordinates
@@ -916,13 +916,13 @@ def closest_point_on_triangle(p : jnp.ndarray, a : jnp.ndarray, b : jnp.ndarray,
 def _point_aabb_distance(p : jnp.ndarray, aabb : jnp.ndarray):
     '''
     Compute squared distance from point to AABB. Returns 0 if point is inside AABB.
-    Parameters:
+    Parameters
     -----------
     p : jnp.ndarray
         (3,) array of point coordinates
     aabb : jnp.ndarray  
         (2, 3) array of AABB min and max corner coordinates
-    Returns:
+    Returns
     -----------
     distance : jnp.ndarray
         Squared distance from point to AABB
@@ -938,7 +938,7 @@ def _bvh_closest_point(bvh : BVH, point: jnp.ndarray, mesh, stack_size : int = 6
 
     For multiple points, use bvh_closest_point_vectorized (handles arbitrary point shapes)
 
-    Parameters:
+    Parameters
     -----------
         bvh: BVH
             BVH structure
@@ -947,7 +947,7 @@ def _bvh_closest_point(bvh : BVH, point: jnp.ndarray, mesh, stack_size : int = 6
         mesh: tuple of (positions, connectivity)
             positions:    jnp.ndarray of shape (M, 3) representing the 3D coordinates of mesh vertices.
             connectivity: jnp.ndarray of shape (K, 3) representing the triangle connectivity of the mesh.
-    Returns:
+    Returns
     -----------
         closest_point: jnp.ndarray [3,]
             Array of closest point on the mesh for the input point.
@@ -1042,14 +1042,14 @@ def get_closest_points_on_mesh(points : jnp.ndarray, mesh) -> jnp.ndarray:
     '''
     Get closest points on triangle mesh for a set of points. 
 
-    Parameters:
+    Parameters
     -----------
         points: jnp.ndarray [N,3]
             Array of points
         mesh: tuple of (positions, connectivity)
             positions:    jnp.ndarray of shape (M, 3) representing the 3D coordinates of mesh vertices.
             connectivity: jnp.ndarray of shape (K, 3) representing the triangle connectivity of the mesh.
-    Returns:
+    Returns
     -----------
         closest_points: jnp.ndarray [N,3]
             Array of closest points on the mesh for each input point.

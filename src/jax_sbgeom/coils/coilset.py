@@ -17,7 +17,7 @@ class CoilSet:
 
     Internally, the coils are stored as a batched Coil object. Therefore, no mixed representations are supported.
     
-    Example:
+    Example
     -------
     >>> coil1 = DiscreteCoil.from_positions(jnp.stack([ jnp.array([1.0, 0.0, 0.0]), jnp.array( [0.0, 1.0, 0.0]), jnp.array([-1.0, 0.0, 0.0]), jnp.array([0.0, -1.0, 0.0]) ]))
     >>> coil2 = DiscreteCoil.from_positions(jnp.stack([ jnp.array([2.0, 0.0, 0.0]), jnp.array( [0.0, 2.0, 0.0]), jnp.array([-2.0, 0.0, 0.0]), jnp.array([0.0, -2.0, 0.0]) ]))    
@@ -92,7 +92,7 @@ class FiniteSizeCoilSet(CoilSet):
     Internally, the coils are stored as a batched FiniteSizeCoil object. Therefore, no mixed representations are supported.
     Is a subclass of CoilSet, so all methods from CoilSet are also available.
 
-    Example:
+    Example
     -------
     >>> coil1 = DiscreteCoil.from_positions(jnp.stack([ jnp.array([1.0, 0.0, 0.0]), jnp.array( [0.0, 1.0, 0.0]), jnp.array([-1.0, 0.0, 0.0]), jnp.array([0.0, -1.0, 0.0]) ]))
     >>> coil2 = DiscreteCoil.from_positions(jnp.stack([ jnp.array([2.0, 0.0, 0.0]), jnp.array( [0.0, 2.0, 0.0]), jnp.array([-2.0, 0.0, 0.0]), jnp.array([0.0, -2.0, 0.0]) ]))    
@@ -176,9 +176,9 @@ def order_coilset_phi(coilset : CoilSet):
     '''
     Orders a CoilSet in increasing toroidal angle (phi). Works with both CoilSet and FiniteSizeCoilSet.
 
-    Parameters:
+    Parameters
         coilset (CoilSet) : CoilSet to order
-    Returns:
+    Returns
         CoilSet           : ordered Coil_Set       
     '''
 
@@ -194,9 +194,9 @@ def ensure_coilset_rotation(coilset : CoilSet, positive_rotation : bool):
     '''
     Ensures that all coils in a CoilSet are defined in the same direction.
 
-    Parameters:
+    Parameters
         coilset (CoilSet) : CoilSet to ensure rotation
-    Returns:
+    Returns
         CoilSet           : CoilSet with all coils rotation
     '''
     return type(coilset)(_ensure_coilset_rotation_vmap(coilset.coils, positive_rotation))
@@ -204,10 +204,10 @@ def ensure_coilset_rotation(coilset : CoilSet, positive_rotation : bool):
 def filter_coilset(coilset : CoilSet, mask):
     '''
     Filters a CoilSet to only include coils where mask is True.
-    Parameters:
+    Parameters
         coilset (CoilSet) : CoilSet to filter
         mask (jnp.ndarray): Boolean mask to filter coils
-    Returns:
+    Returns
         CoilSet           : filtered CoilSet    
     '''
     return type(coilset)(jax.tree.map(lambda x : x[mask], coilset.coils))
@@ -216,11 +216,11 @@ def filter_coilset_phi(coilset : CoilSet, phi_min : float, phi_max : float):
     '''
     Filters a CoilSet to only include coils with centre phi between phi_min and phi_max.
 
-    Parameters:
+    Parameters
         coilset (CoilSet) : CoilSet to filter
         phi_min (float)   : minimum phi
         phi_max (float)   : maximum phi
-    Returns:
+    Returns
         CoilSet           : filtered CoilSet       
     '''
     phis = jnp.arctan2(coilset.centre()[:,1], coilset.centre()[:,0])
