@@ -2,7 +2,7 @@
 
 A JAX-based Python package for differentiable stellarator geometry.
 
-Documentation: https://timobogaarts.github.io/jax-sbgeom/
+Documentation: https://ipp-srs.github.io/jax-sbgeom/
 
 Key features:
 
