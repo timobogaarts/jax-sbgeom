@@ -2,6 +2,8 @@
 
 A JAX-based Python package for differentiable stellarator geometry.
 
+Documentation: https://timobogaarts.github.io/jax-sbgeom/
+
 Key features:
 
 - Differentiable stellarator fourier series evaluation as in VMEC
@@ -31,4 +33,4 @@ pip install 'jupyterlab' 'pyvista[all]'
 ```
 
 # Tests
-Tests have been developed for a large fraction of the functions, but coverage might not be 100%. All data is provided in the tests folder.
+Tests have been developed for a large fraction of the functions, but coverage might not be 100%. All data is provided in the tests folder. Raytracing tests require trimesh & embreex.
