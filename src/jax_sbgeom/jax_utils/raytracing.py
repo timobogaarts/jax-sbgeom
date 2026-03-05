@@ -286,22 +286,7 @@ class BVH:
     '''
     Dataclass representing a Bounding Volume Hierarchy (BVH).
 
-    Create using build_lbvh function.
-
-    Attributes
-    ----------
-    left_idx : jnp.ndarray
-        Left child indices for each node
-    right_idx : jnp.ndarray
-        Right child indices for each node
-    aabb : jnp.ndarray
-        AABB for each node
-    leafs : jnp.ndarray
-        bool array (whether it is a leaf)
-    order : jnp.ndarray
-        order from primitives -> BVH
-    inverse_order : jnp.ndarray
-        order from BVH -> primitives
+    Build with `build_lbvh`.
     '''
     left_idx      : jnp.ndarray # left child indices for each node
     right_idx     : jnp.ndarray # right child indices for each node
@@ -315,17 +300,18 @@ class BVH:
 def build_lbvh(positions, connectivity):
     '''
     Build a Linear Bounding Volume Hierarchy (LBVH) for a given set of 3D positions and connectivity.
+
     Parameters
-    -----------
-        positions: jnp.ndarray
-            An array of shape (N, 3) representing the 3D coordinates of points.
-        connectivity jnp.ndarray:
-            An array of shape (M, K) representing the connectivity of the points,
-            where each row defines a primitive (e.g., triangle) using indices into the positions array.
+    ----------
+    positions : jnp.ndarray
+        Array of shape (N, 3) with point coordinates.
+    connectivity : jnp.ndarray
+        Array of shape (M, K) with primitive connectivity indices.
+
     Returns
-    -----------
-        BVH:
-            Dataclass containing the LBVH structure with left and right child indices, AABBs, leaf indicators, and ordering information.
+    -------
+    BVH
+        LBVH structure with child indices, AABBs, leaf mask, and ordering maps.
     '''
     normalized_centroids  = _get_norm_centroids(positions, connectivity)
     morton_codes          = _create_morton_codes(normalized_centroids)
@@ -364,20 +350,7 @@ def build_lbvh(positions, connectivity):
                morton_order, jnp.argsort(morton_order))
 
 def _point_in_aabb(point : jnp.ndarray, aabb : jnp.ndarray) -> jnp.ndarray:
-    """
-    Check if a point is inside an axis-aligned bounding box (AABB).
-
-    Parameters
-    ----------
-    point: (3,) jnp.ndarray
-      point coordinates
-    aabb:  (2, 3) jnp.ndarray
-      AABB defined by min and max corners
-
-    Returns
-    -------
-    inside: bool - True if point is inside the AABB, False otherwise
-    """
+    """Return whether a point lies inside an axis-aligned bounding box."""
     min_corner = aabb[0]
     max_corner = aabb[1]
     inside = jnp.all((point >= min_corner) & (point <= max_corner))
@@ -829,12 +802,11 @@ def find_minimum_distance_to_mesh(points : jnp.ndarray, directions : jnp.ndarray
 def closest_point_on_triangle(p : jnp.ndarray, a : jnp.ndarray, b : jnp.ndarray, c : jnp.ndarray):
     '''
     Compute the closest point on triangle abc to point p.
-    Not vectorzed itself. Reimplements:
-        https://github.com/RenderKit/embree/blob/master/tutorials/common/math/closest_point.h
-    but without if conditionals.
+    Not vectorized itself. Reimplements the Embree reference algorithm
+    without explicit if conditionals.
 
     Parameters
-    ------------
+    ----------
     p : jnp.ndarray
         (3,) array of point coordinates
     a : jnp.ndarray
@@ -844,7 +816,7 @@ def closest_point_on_triangle(p : jnp.ndarray, a : jnp.ndarray, b : jnp.ndarray,
     c : jnp.ndarray
         (3,) array of triangle vertex c coordinates
     Returns
-    ------------
+    -------
     closest_point : jnp.ndarray
         (3,) array of closest point coordinates
     '''
@@ -939,22 +911,22 @@ def _bvh_closest_point(bvh : BVH, point: jnp.ndarray, mesh, stack_size : int = 6
     For multiple points, use bvh_closest_point_vectorized (handles arbitrary point shapes)
 
     Parameters
-    -----------
-        bvh: BVH
-            BVH structure
-        point: jnp.ndarray [3,]
-            Array of point coordinates
-        mesh: tuple of (positions, connectivity)
-            positions:    jnp.ndarray of shape (M, 3) representing the 3D coordinates of mesh vertices.
-            connectivity: jnp.ndarray of shape (K, 3) representing the triangle connectivity of the mesh.
+    ----------
+    bvh : BVH
+        BVH structure.
+    point : jnp.ndarray
+        Query point with shape (3,).
+    mesh : tuple
+        Mesh tuple `(positions, connectivity)` with triangle connectivity.
+
     Returns
-    -----------
-        closest_point: jnp.ndarray [3,]
-            Array of closest point on the mesh for the input point.
-        distance: jnp.ndarray []
-            Distance from the input point to its closest point on the mesh.
-        triangle_index: jnp.ndarray []
-            Index of the triangle on which the closest point lies.
+    --------
+    closest_point : jnp.ndarray
+        Closest point on the mesh.
+    distance : jnp.ndarray
+        Distance from query point to closest point.
+    triangle_index : jnp.ndarray
+        Triangle index of the closest point.
     '''
 
     N_leafs = (bvh.leafs.shape[0] + 1) // 2

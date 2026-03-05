@@ -16,18 +16,22 @@ class Coil(ABC):
     '''
     @abstractmethod 
     def position(self, s):     
+        '''Position as a function of normalised arc length s (0 <= s < 1)'''
         ...
 
     @abstractmethod
     def tangent(self, s):       
+        '''Tangent vector as a function of normalised arc length s (0 <= s < 1)'''
         ...
 
     @abstractmethod
     def centre(self):      
+        '''Centre of the coil'''
         ...
 
     @abstractmethod
     def normal(self, s):
+        '''Normal vector as a function of normalised arc length s (0 <= s < 1)'''
         ...
         
     @abstractmethod

@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 Welcome to jax-sbgeom's documentation!
-==================================
+======================================
 
 .. toctree::
    :maxdepth: 1

@@ -30,7 +30,8 @@ class CoilSet:
     >>> coil1_copy = coilset[0]  # Get first coil in the coilset
         
     '''
-    coils : Coil    
+    coils : Coil
+    '''Coils in the coilset, stored as a batched Coil object. The batch dimension is the first dimension of all arrays in the Coil dataclass.'''
     
     @classmethod
     def from_list(cls, coils : List[Coil]):
