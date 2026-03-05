@@ -51,4 +51,3 @@ typehints_use_signature = True # show typehints in the function signature.
 add_module_names = False # removes the long jax_sbgeom.module.name from the docs.
 
 nb_execution_mode = "cache"
-nb_execution_cache_path = ".jupyter_cache"
