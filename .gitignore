@@ -128,3 +128,5 @@ dmypy.json
 *.swp
 *.swo
 *~
+
+*.nc4

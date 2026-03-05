@@ -42,11 +42,13 @@ Some examples use the `PyVista <https://pyvista.org/>`_ library for visualizatio
 
 Why another library?
 -----------------------
-Similar libraries exist, see e.g. `Parastell <https://github.com/svalinn/parastell>`_. We opted to develop this from the following reasons:
+Similar libraries exist, see e.g. `Parastell <https://github.com/svalinn/parastell>`_. Also, every plasma and stellarator optimization framework has similar functions
+for stellarator geometry. We opted to develop this from the following reasons:
 
+- **Beyond the last-closed flux surface**: For blanket design, we need to be able to describe the geometry beyond the last-closed flux surface. This is not a standard feature in most libraries! 
 - **Differentiability**: JAX's autodiff capabilities allow for gradient-based optimization and sensitivity analysis. Although the package itself uses it sparingly, for applications such as blanket optimization, differentiable geometry is crucial.
 - **Volume meshing**: deterministic neutronics needs efficient meshes. Structured meshes in flux surface coordinates are an efficient way to produce uniform meshes in layered blanket geometry.
-- **Timing**: Development of this package started when no other libraries were available.
+- **Timing**: Development of this package started when no other blanket geometry libraries were available.
 
 
 Examples
