@@ -38,6 +38,6 @@ dependencies = [
 Homepage = "https://github.com/timobogaarts/jax-sbgeom"
 Repository = "https://github.com/timobogaarts/jax-sbgeom"
 
-[tool.setuptools]
-packages = ["jax_sbgeom"]
 
+[tool.setuptools.packages.find]
+where = ["src"]
