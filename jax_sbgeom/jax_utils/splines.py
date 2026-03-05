@@ -234,6 +234,9 @@ def make_periodic_knots(n: int, k: int) -> jnp.ndarray:
     """
     Build a periodic knot vector for n control points, degree k,
     on the domain [0, 2*pi).
+    This is different than _periodic_knots, which builds a knot vector for periodic interpolation of given data points. 
+    This function is for building a knot vector for periodic B-spline parametrization.
+
     
     Parameters
     ----------
