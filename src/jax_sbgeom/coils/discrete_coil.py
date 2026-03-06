@@ -36,7 +36,7 @@ class DiscreteCoil(Coil):
         DiscreteCoil
             DiscreteCoil object
         '''
-        return cls(positions=positions, _centre_i = jnp.mean(positions, axis=0))
+        return cls(positions=positions, _centre_i = jnp.mean(positions, axis=-2))
 
     def position(self, s):
         '''
@@ -94,7 +94,8 @@ class DiscreteCoil(Coil):
         jnp.ndarray
             Normal vector(s) along the coil (jnp.nan)
         '''
-        return jnp.full(s.shape + (3,), jnp.nan)
+        
+        return jnp.full(jnp.array(s).shape + (3,), jnp.nan)
     
     def reverse_parametrisation(self):
         '''

@@ -737,7 +737,6 @@ def ray_triangle_intersection_single(point : jnp.ndarray, direction : jnp.ndarra
     t:  
         distance along ray (jnp.inf if no hit)    
     """
-    print("WHTJK")
     v0 = triangle[0, :]
     v1 = triangle[1, :]
     v2 = triangle[2, :]
