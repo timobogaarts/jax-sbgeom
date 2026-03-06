@@ -3,3 +3,4 @@ sphinx-rtd-theme
 sphinx-autodoc-typehints
 sphinxcontrib-napoleon
 myst_nb
+plotly<6.0

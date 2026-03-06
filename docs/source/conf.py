@@ -49,5 +49,10 @@ autodoc_default_options = {
 typehints_use_signature = True # show typehints in the function signature.
 add_module_names = False # removes the long jax_sbgeom.module.name from the docs.
 
-nb_execution_mode = "off"
-#nb_execution_cache_path = "notebooks/.jupyter_cache"
+nb_execution_mode = "cache"
+nb_execution_cache_path = "docs/source/notebooks/.jupyter_cache"
+myst_enable_extensions = [
+    "dollarmath"
+]
+myst_dmath_double_inline = True
+html_js_files = ["https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"]
