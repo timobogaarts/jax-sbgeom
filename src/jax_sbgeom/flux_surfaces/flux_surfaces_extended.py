@@ -3,9 +3,10 @@ import h5py
 import jax
 import numpy as onp
 from dataclasses import dataclass
-from jax_sbgeom.jax_utils import stack_jacfwd
+from jax_sbgeom.jax_utils import stack_jacfwd, interpolate_fractions, bilinear_interp
 from functools import partial
-from .flux_surfaces_base import FluxSurface, FluxSurfaceBase, ToroidalExtent, FluxSurfaceSettings, FluxSurfaceData, _data_modes_settings_from_hdf5, _cartesian_to_cylindrical, _principal_curvatures_interpolated, _cylindrical_position_interpolated, _cylindrical_to_cartesian
+from .flux_surfaces_base import FluxSurface, FluxSurfaceBase, ToroidalExtent, FluxSurfaceSettings, FluxSurfaceData, _data_modes_settings_from_hdf5, _cartesian_to_cylindrical, _principal_curvatures_interpolated, _cylindrical_position_interpolated, _cylindrical_to_cartesian, ParametrisedSurface, _normalize_theta_phi_full_mod
+
 
 from .flux_surfaces_base import _cartesian_position_interpolated, _normal_interpolated
 import equinox as eqx
@@ -131,6 +132,56 @@ class FluxSurfaceFourierExtended(FluxSurfaceBase):
     
     def principal_curvatures(self, s, theta, phi):
         return _fourier_extended_principal_curvatures(self, self.extension_flux_surface, s, theta, phi)
+    
+
+
+class FluxSurfaceExtendedDistanceMatrix(ParametrisedSurface):    
+
+    flux_surface_extended : FluxSurfaceBase
+    '''Flux surface extenion used. Cannot be of type FluxSurface.'''
+    
+
+    d_layers : jnp.ndarray
+    '''The distance matrices of each layer: assumed to be shaped like [n_theta_sampled, n_phi_sampled]. s[0,0] is (0,0), s[-1-1] corresponds to (2pi, 2pi/nfp)'''
+
+
+    def __check_init__(self):
+        assert not isinstance(self.flux_surface_extended, FluxSurface), "flux_surface_extended cannot be of type FluxSurface; this means no extension exists and class is useless"
+
+    @eqx.filter_jit
+    def cylindrical_position(self, s, theta, phi):
+        return _cartesian_to_cylindrical(self.cartesian_position(s, theta, phi))
+    
+
+    def s_interp(self, s, theta, phi ):
+        s_bc, theta_bc, phi_bc = jnp.broadcast_arrays(s, theta, phi)
+        d_total_interp = _d_interp_vectorized(self.d_layers, self.flux_surface_extended.nfp, s, theta, phi)
+
+        inner_position = self.flux_surface_extended.cartesian_position(jnp.minimum(s_bc, 1.0), theta_bc, phi_bc)
+        external_position = self.flux_surface_extended.cartesian_position(1.0 + d_total_interp, theta_bc, phi_bc)
+
+        ds_internal = jnp.where(s_bc <= 1.0, 0.0, jnp.where(s_bc >= 2.0, 1.0, s_bc - 1.0))
+        s_internal = jnp.where(s_bc <= 1.0, s_bc, jnp.where(s_bc >= 2.0, 1.0 + d_total_interp, 1.0 + ds_internal * d_total_interp))
+        return s_internal
+
+
+    # @eqx.filter_jit
+    # def d_interp(self, s, theta, phi):
+    #     return _d_interp_vectorized(self.d_layers, self.flux_surface_extended.nfp, s, theta, phi)
+
+    @eqx.filter_jit
+    def cartesian_position(self, s, theta, phi):
+        return self.flux_surface_extended.cartesian_position(self.s_interp(s,theta,phi), theta, phi)
+                        
+        
+
+    @eqx.filter_jit
+    def normal(self, s, theta, phi):
+        raise NotImplementedError
+    
+    @eqx.filter_jit
+    def principal_curvatures(self, s, theta, phi):
+        raise NotImplementedError
 
 # ===================================================================================================================================================================================
 #                                                                           Normal Extended
@@ -747,4 +798,20 @@ def _fourier_extended_principal_curvatures(flux_surface : FluxSurfaceBase, exten
 
 
 
+#====================================================================================================================================================================================
+# FluxSurfaceExtendedDistanceMatrix methods
+#====================================================================================================================================================================================
+def _d_interp(d_layers, nfp, s, theta, phi):
+    s_norm =  jnp.maximum(0.0, (s - 2.0) / (d_layers.shape[0] - 1))
+    s_norm = jnp.minimum(1.0, s_norm)
+    i0, i1, ds = interpolate_fractions(s_norm, d_layers.shape[0])
+    
+    d_lower = d_layers[i0] 
+    d_upper = d_layers[i1]
+    d_lower_interp = bilinear_interp(*_normalize_theta_phi_full_mod(theta, phi , nfp), d_lower)
+    d_upper_interp = bilinear_interp(*_normalize_theta_phi_full_mod(theta, phi , nfp), d_upper)
+    d_total_interp  = d_lower_interp * (1-ds) + d_upper_interp * ds
+    return d_total_interp
 
+
+_d_interp_vectorized = eqx.filter_jit(jnp.vectorize(_d_interp,  excluded=(0,1), signature='(),(),()->()'))

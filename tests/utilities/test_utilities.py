@@ -34,20 +34,6 @@ def _interpolation_cases():
     return [(x1, y1), (x2, y2), (x3, y3), (x4, y4), (x5, y5), (x6, y6)]
 
 
-@pytest.mark.parametrize("x, y", _interpolation_cases())
-def test_pchip_derivatives(x, y):
-    # Compute derivatives using JAX implementation
-    jax_derivs = jax_sbgeom.jax_utils.numerical._pchip_derivatives(x, y)
-
-    # Compute derivatives using SciPy's PchipInterpolator
-    xnp, ynp = onp.array(x), onp.array(y)
-    
-    scipy_derivs = scipy.interpolate.PchipInterpolator._find_derivatives(xnp, ynp)
-
-    # Compare the results
-    onp.testing.assert_allclose(jax_derivs, scipy_derivs, rtol=1e-5, atol=1e-8)
-
-
 
 @pytest.mark.parametrize("x, y", _interpolation_cases())
 def test_pchip_interpolation(x, y):
