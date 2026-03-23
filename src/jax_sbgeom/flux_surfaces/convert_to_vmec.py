@@ -229,7 +229,7 @@ def convert_to_equal_arclength(flux_surface : FluxSurfaceBase, n_theta : int, n_
     if flux_surface.data.Rmnc.ndim == 1:
         return _convert_to_equal_arclength_single(flux_surface, n_theta, n_phi, n_theta_s_arclength)
     else:
-        flux_surface_data, _  = jax.vmap(_convert_to_equal_arclength_single, in_axes=(FluxSurfaceBase(FluxSurfaceData(0,0), FluxSurfaceModes(None, None), FluxSurfaceSettings(None, None, None)), None, None, None ))(flux_surface, n_theta, n_phi, n_theta_s_arclength)
+        flux_surface_data, _  = jax.vmap(_convert_to_equal_arclength_single, in_axes=(type(flux_surface)(FluxSurfaceData(0,0), FluxSurfaceModes(None, None), FluxSurfaceSettings(None, None, None)), None, None, None ))(flux_surface, n_theta, n_phi, n_theta_s_arclength)
         return flux_surface_data, FluxSurfaceSettings(*mpol_ntor_from_ntheta_nphi(n_theta, n_phi), flux_surface.nfp)
     
 def mpol_ntor_from_ntheta_nphi(n_theta : int, n_phi : int) -> Tuple[int,int]:    

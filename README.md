@@ -34,3 +34,24 @@ pip install 'jupyterlab' 'pyvista[all]'
 
 # Tests
 Tests have been developed for a large fraction of the functions, but coverage might not be 100%. All data is provided in the tests folder. Raytracing tests require trimesh & embreex.
+
+
+#DAGMC installation
+
+For DAGMC and OpenMC, it can be slightly tricky to get everything working. What seems to work is conda install openmc (ensuring it is DAGMC-enabled, using e.g. openmc --version or explicitly installing a version),
+installing PyDAGMC by
+
+```
+pip install pydagmc
+```
+
+and finally manually building MOAB with HDF5 support (assuming you are in a conda environment with HDF5 installed):
+
+```
+git clone https://bitbucket.org/fathomteam/moab.git
+cd moab
+SKBUILD_CMAKE_ARGS="-DENABLE_HDF5=ON;-DHDF5_DIR=$CONDA_PREFIX" pip install .
+```
+
+
+

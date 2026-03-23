@@ -188,6 +188,28 @@ def convert_half_module_points_to_multiple_full_modules_mesh(points_half_module,
     return points_multiple_full_module.reshape(-1,3), triangles
 
 
+def convert_f_half_mod_to_full_mod(f_theta_phi_hm : jnp.ndarray):
+    '''
+    Converts a function defined on the half-module to the full module.
+
+    Flips over the theta at the boundary of the half-module. Since boundary is included
+
+    Parameters
+    -----------
+    f_theta_phi_hm : jnp.ndarray [..., n_theta, n_phi]
+        The function defined on the half module: [0, 2 * pi] and [0, 2 * pi / (2 * n_fp)], including both endpoints.    
+
+    Returns
+    --------
+    f_theta_phi_fm : jnp.ndarray [..., n_theta, 2 * n_phi - 1]
+        The function defined on the full module.
+    '''
+        
+    f_theta_phi_hm_flipped = jnp.flip(jnp.flip(f_theta_phi_hm, axis=-2), axis=-1)
+    f_theta_phi_fm = jnp.concatenate([f_theta_phi_hm, f_theta_phi_hm_flipped[..., :, 1:]], axis=-1)
+    return f_theta_phi_fm
+
+
 
 
 
