@@ -26,8 +26,14 @@ def mesh_to_pyvista_mesh(pts, conn = None):
         pts = pts[0]
         
     import pyvista as pv
-    if conn.shape[-1] == 3:
-        
+    if conn.shape[-1] ==2:
+        points_onp = onp.array(pts)
+        conn_onp   = onp.array(conn)
+        lines = onp.hstack([onp.full((conn_onp.shape[0], 1), 2), conn_onp]).astype(onp.int64)
+        lines = lines.flatten()
+        mesh = pv.PolyData(points_onp, lines=lines)
+        return mesh
+    elif conn.shape[-1] == 3:   
         points_onp = onp.array(pts)
         conn_onp   = onp.array(conn)
         faces_pv = onp.hstack([onp.full((conn_onp.shape[0], 1), 3), conn_onp]).astype(onp.int64)
@@ -41,15 +47,16 @@ def mesh_to_pyvista_mesh(pts, conn = None):
         cells = cells.flatten()
         mesh = pv.UnstructuredGrid(cells, onp.full(conn_onp.shape[0], 10), points_onp)
         return mesh
-    elif conn.shape[-1] ==2:
+    elif conn.shape[-1] == 8:
         points_onp = onp.array(pts)
         conn_onp   = onp.array(conn)
-        lines = onp.hstack([onp.full((conn_onp.shape[0], 1), 2), conn_onp]).astype(onp.int64)
-        lines = lines.flatten()
-        mesh = pv.PolyData(points_onp, lines=lines)
+        cells = onp.hstack([onp.full((conn_onp.shape[0], 1), 8), conn_onp]).astype(onp.int64)
+        cells = cells.flatten()
+        mesh = pv.UnstructuredGrid(cells, onp.full(conn_onp.shape[0], 12), points_onp)
         return mesh
+
     else:
-        raise ValueError("Connectivity must be triangles or tetrahedra")
+        raise ValueError("Connectivity must be triangles, tetrahedra, or hexahedra")
     
 def vertices_to_pyvista_polyline(pts : jnp.ndarray):
     '''
