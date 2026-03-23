@@ -29,10 +29,10 @@ import pyvista as pv
 
 import matplotlib.pyplot as plt
 import jax_sbgeom.coils.coil_winding_surface as cws
-vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
+vmec_files = ["examples/data/vmecs/helias3_vmec.nc4", "examples/data/vmecs/helias5_vmec.nc4", "examples/data/vmecs/squid_vmec.nc4"]
 vmec_file = vmec_files[2]
 
-coil_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
+coil_files = ["examples/data/vmecs/HELIAS3_coils_all.h5", "examples/data/vmecs/HELIAS5_coils_all.h5", "examples/data/vmecs/squid_coilset.h5"]
 
 # %%
 coilsd = onp.loadtxt("filament_s4uu_5ci_23")[:,:]

@@ -24,10 +24,11 @@ def run_closed_surfaces_test(vmec_i):
         
     project_root = os.path.abspath(os.path.join(os.getcwd(), ".."))
     sys.path.append(project_root)
-    vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
+    vmec_files = ["examples/data/vmecs/helias3_vmec.nc4", "examples/data/vmecs/helias5_vmec.nc4", "examples/data/vmecs/squid_vmec.nc4"]
 
 
-    from tests.flux_surfaces.test_flux_surface_base import  _get_flux_surfaces, _get_all_closed_surfaces
+    # from tests.flux_surfaces.test_flux_surface_base_data import  _get_flux_surfaces, _get_all_closed_surfaces
+    from tests.flux_surfaces.test_flux_surface_base_data import  _get_all_closed_surfaces
     def _get_flux_surfaces(vmec_file):
         fs_jax    = jsb.flux_surfaces.FluxSurface.from_hdf5(vmec_file)    
         return fs_jax
@@ -59,7 +60,7 @@ def run_closed_surfaces_test(vmec_i):
 
 def optimize_cws_and_plot(coil_i : int = 2, convert_to_fourier : bool = True):
    
-    coil_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
+    coil_files = ["examples/data/vmecs/HELIAS3_coils_all.h5", "examples/data/vmecs/HELIAS5_coils_all.h5", "examples/data/vmecs/squid_coilset.h5"]
 
     coil_file = coil_files[coil_i]
 
@@ -165,7 +166,7 @@ def aabb_to_lines(aabbs):
 
 def plot_bvh(coil_i = 2, idx_child = 0):
     import jax_sbgeom.jax_utils.raytracing as RT
-    coil_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
+    coil_files = ["examples/data/vmecs/HELIAS3_coils_all.h5", "examples/data/vmecs/HELIAS5_coils_all.h5", "examples/data/vmecs/squid_coilset.h5"]
 
     coil_file = coil_files[coil_i]
 
@@ -227,8 +228,8 @@ def plot_bvh(coil_i = 2, idx_child = 0):
     
     
 def plot_different_cws_methods(vmec_i = 2):
-    coil_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS3_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/HELIAS5_coils_all.h5", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_coilset.h5"]
-    vmec_files = ["/home/tbogaarts/stellarator_paper/base_data/vmecs/helias3_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/helias5_vmec.nc4", "/home/tbogaarts/stellarator_paper/base_data/vmecs/squid_vmec.nc4"]
+    coil_files = ["examples/data/vmecs/HELIAS3_coils_all.h5", "examples/data/vmecs/HELIAS5_coils_all.h5", "examples/data/vmecs/squid_coilset.h5"]
+    vmec_files = ["examples/data/vmecs/helias3_vmec.nc4", "examples/data/vmecs/helias5_vmec.nc4", "examples/data/vmecs/squid_vmec.nc4"]
 
     fs_jax    = jsb.flux_surfaces.FluxSurfaceNormalExtendedNoPhi.from_hdf5(vmec_files[vmec_i])
     
