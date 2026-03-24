@@ -27,6 +27,8 @@ class DiscreteCoil(Coil):
         '''
         Create a DiscreteCoil from discrete positions
 
+        Positions are assumed to be non-periodic (in other words, the first and last point are not equal).
+
         Parameters
         ----------
         positions : jnp.ndarray
