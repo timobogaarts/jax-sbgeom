@@ -182,6 +182,30 @@ def _get_coil_mesh(coilset_jsb):
     
     return jnp.concatenate([onp.array(coil_pos).reshape(-1), onp.array(coil_conn).reshape(-1)], axis=0)
 
+
+def test_generate_vertices_from_finite_sized_lines_bilinear_spacing():
+    # AI written test
+    from jax_sbgeom.coils.coil_meshing import _generate_vertices_from_finite_sized_lines
+
+    finite_size_lines = jnp.array([[[1.0, 1.0, 0.0],
+                                   [-1.0, 1.0, 0.0],
+                                   [-1.0, -1.0, 0.0],
+                                   [1.0, -1.0, 0.0]]])
+
+    vertices = _generate_vertices_from_finite_sized_lines(finite_size_lines, 7)  # [1,7,7,3]
+    mid_row = onp.asarray(vertices[0, 3, :, :])
+
+    # mid-row should produce 7 distinct points along radial direction (not identical)
+    assert onp.unique(mid_row, axis=0).shape[0] == 7
+    assert not onp.allclose(mid_row, mid_row[0:1])
+
+    # corners should match the given patch orientation
+    assert onp.allclose(onp.asarray(vertices[0, 0, 0]), [-1.0, -1.0, 0.0])
+    assert onp.allclose(onp.asarray(vertices[0, 0, -1]), [1.0, -1.0, 0.0])
+    assert onp.allclose(onp.asarray(vertices[0, -1, 0]), [-1.0, 1.0, 0.0])
+    assert onp.allclose(onp.asarray(vertices[0, -1, -1]), [1.0, 1.0, 0.0])
+
+
 @pytest.mark.parametrize("data_file", data_input.glob("*_input.npy"))
 def test_discrete_coil_mesh(data_file):
     coil_posconn = _get_coil_mesh(_get_all_discrete_coils(data_file))
