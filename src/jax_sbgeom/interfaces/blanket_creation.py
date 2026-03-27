@@ -31,7 +31,10 @@ class LayeredBlanket(eqx.Module):
 
 class BlanketMeshStructure(eqx.Module):
     '''
-    Class representing the structure of a volume blanket mesh .
+    Class representing the structure of a volume blanket mesh.
+
+    Has several convenience functions to slice the blanket and functions 
+    defined on the blanket.
     '''
 
     n_theta : int
@@ -60,12 +63,27 @@ class BlanketMeshStructure(eqx.Module):
         return jnp.where(self.full_angle, self.n_phi, self.n_phi - 1)
     @property 
     def n_theta_blocks(self):
-        return self.n_theta 
+        return self.n_theta     
     
+    @property
+    def n_layered_blocks(self):
+        return self.n_s - 1
+    
+    def _norm_negative(self, layer_i : int):
+        return jnp.where(layer_i < 0, self.n_layered_blocks + layer_i , layer_i)
     
     def n_blocks_in_layer(self, layer_i : int):
-        layer_i_mod = jnp.where(layer_i < 0, self.n_s + layer_i, layer_i)
+        layer_i_mod = self._norm_negative(layer_i)
         return jnp.where(jnp.logical_and(layer_i_mod == 0, self.include_axis), 3 * self.n_theta_blocks * self.n_phi_blocks, 6 * self.n_theta_blocks * self.n_phi_blocks)                    
+    
+    def layer_start(self, layer_i : int):
+        layer_i_mod = self._norm_negative(layer_i)
+        
+        return jnp.where(self.include_axis, 3 * self.n_theta_blocks * self.n_phi_blocks * (layer_i_mod > 0) + 6 * self.n_theta_blocks * self.n_phi_blocks * (layer_i_mod - 1) * (layer_i_mod > 0), 0)
+    
+    def layer_slice(self, layer_i : int):
+        print(self.layer_start(layer_i), self.n_blocks_in_layer(layer_i))
+        return slice(self.layer_start(layer_i), self.layer_start(layer_i) + self.n_blocks_in_layer(layer_i))
     
     @property 
     def n_elements(self):        
