@@ -72,6 +72,10 @@ class BlanketMeshStructure(eqx.Module):
     def _norm_negative(self, layer_i : int):
         return jnp.where(layer_i < 0, self.n_layered_blocks + layer_i , layer_i)
     
+    def _n_tet_per_block(self, layer_i : int):
+        layer_i_mod = self._norm_negative(layer_i)
+        return jnp.where(jnp.logical_and(layer_i_mod == 0, self.include_axis), 3, 6 )
+    
     def n_blocks_in_layer(self, layer_i : int):
         layer_i_mod = self._norm_negative(layer_i)
         return jnp.where(jnp.logical_and(layer_i_mod == 0, self.include_axis), 3 * self.n_theta_blocks * self.n_phi_blocks, 6 * self.n_theta_blocks * self.n_phi_blocks)                    
@@ -81,9 +85,35 @@ class BlanketMeshStructure(eqx.Module):
         
         return jnp.where(self.include_axis, 3 * self.n_theta_blocks * self.n_phi_blocks * (layer_i_mod > 0) + 6 * self.n_theta_blocks * self.n_phi_blocks * (layer_i_mod - 1) * (layer_i_mod > 0), 0)
     
-    def layer_slice(self, layer_i : int):
-        print(self.layer_start(layer_i), self.n_blocks_in_layer(layer_i))
+    def layer_slice(self, layer_i : int):    
         return slice(self.layer_start(layer_i), self.layer_start(layer_i) + self.n_blocks_in_layer(layer_i))
+        
+    def reshape_to_layer(self, layer_i : int, arr : jnp.ndarray):
+        '''
+        Reshapes a flat array of shape (n_elements,) to the shape of the blocks in the given layer, which is (n_phi_blocks, n_theta_blocks, n_tet_per_block).
+        This n_tet_per_block is 3 for the first layer if the axis is included, and 6 otherwise. For all other layers, it is 6.
+        '''
+        return arr[self.layer_slice(layer_i)].reshape(self.n_phi_blocks, self.n_theta_blocks, self._n_tet_per_block(layer_i))
+    
+    def reshape_without_axis(self, arr : jnp.ndarray):
+        '''
+        Reshapes a flat array of shape (n_elements,) to the shape of the blocks in the blanket, which is (n_layered_blocks, n_phi_blocks, n_theta_blocks, n_tet_per_block).
+    
+        Discards the first layer if an axis is present and then reshapes the last.        
+        '''  
+        if self.include_axis:
+            return arr[self.layer_start(1):].reshape(self.n_layered_blocks - 1, self.n_phi_blocks, self.n_theta_blocks, 6)      
+        else:
+            return arr.reshape(self.n_layered_blocks, self.n_phi_blocks, self.n_theta_blocks, 6)        
+    
+    def map_radial_array_to_layers(self, arr : jnp.ndarray):
+        '''
+        Maps a flat array of shape (n_s,) to the shape of the layers in the blanket, which is (n_layered_blocks,).
+        This is useful for mapping a radial function defined on the layers to the blocks in the blanket (e.g. materials)
+        '''
+        assert arr.shape == (self.n_layered_blocks,), f"Input array has shape {arr.shape}, but expected shape is {(self.n_layered_blocks,)}"
+
+        return jnp.repeat(arr, self.n_blocks_in_layer(jnp.arange(self.n_layered_blocks)), axis=0)
     
     @property 
     def n_elements(self):        
@@ -139,6 +169,14 @@ class LayeredDiscreteBlanket(LayeredBlanket):
     def volume_mesh_structure(self) -> BlanketMeshStructure:
         ...
 
+    @property
+    def layer_array(self):
+        '''
+        Maps a flat array of shape (n_elements,) to the shape of the layers in the blanket, which is (n_layered_blocks,).
+        This is useful for mapping a radial function defined on the layers to the blocks in the blanket (e.g. materials)
+        '''
+        return self.volume_mesh_structure.map_radial_array_to_layers(jnp.repeat(jnp.arange(self.n_layers), jnp.array(self.resolution_layers)))
+
 
 class LayeredDiscreteBlanketTransformed(LayeredDiscreteBlanket):
     '''
@@ -171,6 +209,10 @@ class LayeredDiscreteBlanketPlasmaTransformed(LayeredDiscreteBlanketTransformed)
     def volume_mesh_structure(self) -> BlanketMeshStructure:
         n_s = self.n_discrete_layers + 1 
         return BlanketMeshStructure(n_theta=self.n_theta, n_phi=self.n_phi, n_s = n_s, include_axis=True, full_angle=self.toroidal_extent.full_angle())
+
+    @property
+    def s_spacing(self):
+        return _compute_s_spacing_transformed_axis(self, self.s_power_sampling)
     
     
     

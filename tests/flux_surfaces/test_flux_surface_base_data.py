@@ -227,7 +227,7 @@ def _check_closed_surface_volumes(surfaces, atol=1e-10):
     for surf in surfaces:
         points, connectivity = surf
         mesh = mesh_to_pyvista_mesh(points, connectivity)  
-        onp.testing.assert_allclose(mesh.volume, jsb.flux_surfaces.flux_surface_meshing._volume_of_mesh(points, connectivity), atol=atol)
+        onp.testing.assert_allclose(mesh.volume, jsb.jax_utils.mesh.volume_of_mesh(points, connectivity), atol=atol)
 
     
 def _get_tetrahedral_mesh_jsb(fs_jax, s_values, phi_end, n_theta=20, n_phi=31):

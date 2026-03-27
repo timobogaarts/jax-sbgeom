@@ -1,4 +1,5 @@
 
+import jax
 import jax.numpy as jnp
 import numpy as onp
 # ===================================================================================================================================================================================
@@ -159,3 +160,37 @@ def boundary_centroids_from_tetrahedron(tetrahedron : jnp.ndarray):
     c3 = (v1 + v2 + v3) / 3.0
     centroids = jnp.stack([c0, c1, c2, c3,], axis=-2)
     return centroids
+
+
+# ===================================================================================================================================================================================
+#                                                                           Functions on meshes
+# ===================================================================================================================================================================================
+@jax.jit
+def volumes_tetrahedra(positions : jnp.ndarray, connectivity : jnp.ndarray):
+    assert connectivity.shape[-1] == 4, "Connectivity must have shape (n_tetrahedra, 4) for tetrahedral meshes."
+    a = positions[connectivity[:,0], :]
+    b = positions[connectivity[:,1], :]
+    c = positions[connectivity[:,2], :]
+    d = positions[connectivity[:,3], :]
+    ab = b - a
+    ac = c - a
+    ad = d - a
+    volumes = jnp.abs(jnp.einsum('ij,ij->i', ab, jnp.cross(ac, ad))) / 6.0
+    return volumes
+
+@jax.jit
+def volume_of_mesh(positions : jnp.ndarray, connectivity : jnp.ndarray):    
+    if connectivity.shape[-1] == 3:
+        # Triangle mesh calculation
+
+        a = positions[connectivity[:,0], :]
+        b = positions[connectivity[:,1], :]
+        c = positions[connectivity[:,2], :]
+        cross_prod = jnp.cross(b - a, c - a)
+        volume = jnp.sum(jnp.einsum('ij,ij->i', a, cross_prod)) / 6.0
+        return volume
+    elif connectivity.shape[-1] == 4:
+        # Tetrahedral mesh calculation        
+        return jnp.abs(volumes_tetrahedra(positions, connectivity)).sum()
+    else:
+        raise ValueError("Connectivity must have shape (n_elements, 3) for triangles or (n_elements, 4) for tetrahedra.")
