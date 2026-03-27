@@ -52,7 +52,8 @@ def create_dagmc_surface_mesh(discrete_blanket : LayeredDiscreteBlanket, flux_su
         return moab_core.create_elements(types.MBTRI, moab_connectivity)
     
     assert len(material_names) == len(discrete_blanket.d_layers) - 1, "Number of material names must be equal to number of blanket layers but got {} names for {} layers".format(len(material_names), len(discrete_blanket.d_layers) - 1)
-    surfaces = jax_sbgeom.flux_surfaces.mesh_watertight_layers(flux_surface, 2.0 + jnp.arange(len(discrete_blanket.d_layers)), discrete_blanket.toroidal_extent, discrete_blanket.n_theta, discrete_blanket.n_phi)
+    
+    surfaces = discrete_blanket.surface_mesh(flux_surface)
     # surfaces = [array[n_points, 3] , [[surf_0, 3], [surf_1, 3], ... ] ]
     
     moab_core   = core.Core()
