@@ -134,7 +134,7 @@ def create_dagmc_surface_mesh(discrete_blanket : LayeredDiscreteBlanket, flux_su
     return dagmc_model
 
 
-def tetrahedral_mesh_to_moab_mesh(vertices : jnp.ndarray, connectivity : jnp.ndarray):
+def tetrahedral_mesh_to_moab_mesh(vertices : jnp.ndarray, connectivity : jnp.ndarray, conversion_factor : float  = 100.0):
     '''
     Convert a tetrahedral mesh to a MOAB mesh.
 
@@ -148,6 +148,8 @@ def tetrahedral_mesh_to_moab_mesh(vertices : jnp.ndarray, connectivity : jnp.nda
         Vertices of the tetrahedral mesh.
     connectivity : jnp.ndarray
         Connectivity of the tetrahedral mesh.
+    conversion_factor : float 
+        Conversion factor (scaling from m->cm ), default 100
     Returns
     -------
     moab_core : pymoab.core.Core
@@ -163,9 +165,9 @@ def tetrahedral_mesh_to_moab_mesh(vertices : jnp.ndarray, connectivity : jnp.nda
     
     moab_core   = core.Core()
     
-    m_to_cm = 100.0
+    
             
-    moab_vertices = moab_core.create_vertices(onp.array(vertices) * m_to_cm).to_array()    
+    moab_vertices = moab_core.create_vertices(onp.array(vertices) * conversion_factor).to_array()    
     mesh_set      = moab_core.create_meshset()
     moab_core.add_entity(mesh_set, moab_vertices)
     connectivity  = onp.array(connectivity)    

@@ -33,6 +33,8 @@ class LayeredDiscreteBlanket(LayeredBlanket):
     '''
     Class representing a layered discrete blanket structure around a flux surface.
 
+    This includes the axis.
+
     Attributes
     ----------
     n_theta : int
@@ -160,7 +162,8 @@ def mesh_tetrahedral_blanket(flux_surface : FluxSurface, blanket : LayeredDiscre
     Then, the first external layer is placed immediately afterwards. Therefore, the total number of element layers until the first external layer is resolution_layers[0].
     The number of elements in the first external layer is resolution_layers[1], and so on.
 
-    It does not use the blanket.d_layers data: it assumes the flux surface is already transformed such that s = 2.0 is equal to the first layer.
+    .. warning::
+        It does not use the blanket.d_layers data: it assumes the flux surface is already transformed such that s = 2.0 is equal to the first layer.
 
     Parameters
     ----------
@@ -173,8 +176,8 @@ def mesh_tetrahedral_blanket(flux_surface : FluxSurface, blanket : LayeredDiscre
     -------
     nodes : jax.numpy.ndarray
         The nodes of the tetrahedral mesh.
-    elements : jax.numpy.ndarray
-        The elements of the tetrahedral mesh.=
+    connectivity : jax.numpy.ndarray
+        The connectivity of the tetrahedral mesh.
     '''
     inner_blanket_spacing = jnp.linspace(0.0, 1.0, blanket.resolution_layers[0]) ** s_power_sampling
     s_layers              = jnp.concatenate([inner_blanket_spacing, jnp.concatenate([jnp.linspace(2.0 + i, 3.0 + i, blanket.resolution_layers[i  + 1], endpoint=False) for i in range(blanket.n_layers - 1)], axis=0), jnp.array([1.0 + blanket.n_layers])])                 
