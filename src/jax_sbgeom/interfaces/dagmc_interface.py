@@ -16,6 +16,8 @@ def create_dagmc_surface_mesh(discrete_blanket : LayeredDiscreteBlanket, flux_su
 
     Note for writing the result to a .h5m file MOAB should have been compiled with HDF5 support.
 
+    Uses a conversion factor from meter to centimeter (all positions multiplied by 100)
+
     Parameters
     ----------
     discrete_blanket : LayeredDiscreteBlanketet
@@ -51,7 +53,7 @@ def create_dagmc_surface_mesh(discrete_blanket : LayeredDiscreteBlanket, flux_su
         moab_connectivity = moab_vertices[surface_connectivity]
         return moab_core.create_elements(types.MBTRI, moab_connectivity)
     
-    assert len(material_names) == len(discrete_blanket.d_layers) - 1, "Number of material names must be equal to number of blanket layers but got {} names for {} layers".format(len(material_names), len(discrete_blanket.d_layers) - 1)
+    assert len(material_names) == discrete_blanket.n_physical_layers - 1, "Number of material names must be equal to number of blanket layers but got {} names for {} layers".format(len(material_names), discrete_blanket.n_physical_layers - 1)
     
     surfaces = discrete_blanket.surface_mesh(flux_surface)
     # surfaces = [array[n_points, 3] , [[surf_0, 3], [surf_1, 3], ... ] ]

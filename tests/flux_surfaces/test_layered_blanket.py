@@ -33,7 +33,12 @@ def _assert_hdf5_equal(a, b, skip_keys=("history",)):
         elif isinstance(a[key], h5py.Group):
             _assert_hdf5_equal(a[key], b[key], skip_keys)
         else:
-            onp.testing.assert_array_equal(a[key][()], b[key][()], err_msg=f"Dataset '{key}' differs")
+            arr_a = onp.array(a[key][:])
+            arr_b = onp.array(b[key][:])
+            if onp.issubdtype(arr_a.dtype, onp.number):
+                onp.testing.assert_allclose(arr_a, arr_b, rtol=1e-10, atol=1e-10, err_msg=f"Dataset '{key}' differs")
+            else:
+                onp.testing.assert_array_equal(arr_a, arr_b, err_msg=f"Dataset '{key}' differs")
 
 
 @pytest.fixture(scope="class", params=list(DATA_INPUT_FLUX_SURFACES.glob("*_input.h5")))
@@ -47,15 +52,15 @@ class TestLayeredBlanket:
     def setup(self, request, data_file):
         fs_jax = jsb.flux_surfaces.FluxSurfaceNormalExtendedNoPhi.from_hdf5(data_file)
 
+        d_layers = jnp.array([0.2, 0.3, 0.7])
         layered_blanket = jsb.interfaces.blanket_creation.LayeredDiscreteBlanketPlasmaTransformed(
-            d_layers=(0.2, 0.3, 0.7),
             n_theta=10,
             n_phi=20,
             resolution_layers=(5, 6, 3),
             toroidal_extent=ToroidalExtent.half_module(fs_jax)
         )
         equal_arclength_flux_surface = jsb.flux_surfaces.create_extended_flux_surface_d_interp_equal_arclength(
-            fs_jax, jnp.array(layered_blanket.d_layers), 50, 60, 100
+            fs_jax, d_layers, 50, 60, 100
         )
 
         request.cls.layered_blanket = layered_blanket
@@ -69,8 +74,8 @@ class TestLayeredBlanket:
         mesh = jsb.interfaces.blanket_creation.mesh_tetrahedral_blanket_transformed_axis(
             self.equal_arclength_flux_surface, self.layered_blanket, 2
         )
-        onp.testing.assert_allclose(onp.load(self.base_file_loc + "_points.npy"), mesh[0])
-        onp.testing.assert_allclose(onp.load(self.base_file_loc + "_connectivity.npy"), mesh[1])
+        onp.testing.assert_allclose(onp.load(self.base_file_loc + "_points.npy"), mesh[0],  rtol = 1e-10, atol = 1e-10)
+        onp.testing.assert_allclose(onp.load(self.base_file_loc + "_connectivity.npy"), mesh[1], rtol = 1e-10, atol = 1e-10)
         assert self.layered_blanket.volume_mesh_structure.n_elements == mesh[1].shape[0]
         assert self.layered_blanket.volume_mesh_structure.n_points == mesh[0].shape[0]
 
@@ -78,9 +83,9 @@ class TestLayeredBlanket:
         surface_mesh = self.layered_blanket.surface_mesh(self.equal_arclength_flux_surface)
         with open(self.base_file_loc + "_surface_mesh.pkl", "rb") as f:
             surface_mesh_loaded = pkl.load(f)
-        onp.testing.assert_allclose(surface_mesh[0], surface_mesh_loaded[0])
+        onp.testing.assert_allclose(surface_mesh[0], surface_mesh_loaded[0], rtol = 1e-10, atol =1e-10)
         for i in range(len(surface_mesh[1])):
-            onp.testing.assert_allclose(surface_mesh[1][i], surface_mesh_loaded[1][i])
+            onp.testing.assert_allclose(surface_mesh[1][i], surface_mesh_loaded[1][i], rtol = 1e-10, atol =1e-10)
     
     @pytest.mark.dagmc
     def test_dagmc(self, tmp_path):

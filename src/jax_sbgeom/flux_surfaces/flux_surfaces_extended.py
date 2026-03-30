@@ -157,9 +157,6 @@ class FluxSurfaceExtendedDistanceMatrix(ParametrisedSurface):
         s_bc, theta_bc, phi_bc = jnp.broadcast_arrays(s, theta, phi)
         d_total_interp = _d_interp_vectorized(self.d_layers, self.flux_surface_extended.nfp, s, theta, phi)
 
-        inner_position = self.flux_surface_extended.cartesian_position(jnp.minimum(s_bc, 1.0), theta_bc, phi_bc)
-        external_position = self.flux_surface_extended.cartesian_position(1.0 + d_total_interp, theta_bc, phi_bc)
-
         ds_internal = jnp.where(s_bc <= 1.0, 0.0, jnp.where(s_bc >= 2.0, 1.0, s_bc - 1.0))
         s_internal = jnp.where(s_bc <= 1.0, s_bc, jnp.where(s_bc >= 2.0, 1.0 + d_total_interp, 1.0 + ds_internal * d_total_interp))
         return s_internal
