@@ -29,7 +29,7 @@ class BlanketMeshStructure(eqx.Module):
     '''
     n_s     : int
     '''
-    Number of discrete layers in the blanket mesh. 
+    Number of radial points in the blanket mesh. 
     '''
     include_axis : bool
     '''
@@ -90,12 +90,12 @@ class BlanketMeshStructure(eqx.Module):
     
     def map_radial_array_to_layers(self, arr : jnp.ndarray):
         '''
-        Maps a flat array of shape (n_s,) to the shape of the layers in the blanket, which is (n_layered_blocks,).
+        Maps a flat array of shape (..., n_s) to the shape of the layers in the blanket, which is (n_layered_blocks,).
         This is useful for mapping a radial function defined on the layers to the blocks in the blanket (e.g. materials)
         '''
-        assert arr.shape == (self.n_layered_blocks,), f"Input array has shape {arr.shape}, but expected shape is {(self.n_layered_blocks,)}"
+        assert arr.shape[-1] == self.n_layered_blocks, f"Input array has last axis shape {arr.shape[-1]}, but expected shape is {self.n_layered_blocks}"
 
-        return jnp.repeat(arr, self.n_blocks_in_layer(jnp.arange(self.n_layered_blocks)), axis=0)
+        return jnp.repeat(arr, self.n_blocks_in_layer(jnp.arange(self.n_layered_blocks)), axis=-1)
     
     @property 
     def n_elements(self):        
