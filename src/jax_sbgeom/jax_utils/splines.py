@@ -230,31 +230,31 @@ def periodic_interpolating_spline(x,y, k : int):
 #=======================================================================
 # BSpline for paramatrization
 #=======================================================================
-def make_periodic_knots(n: int, k: int) -> jnp.ndarray:
+def make_periodic_knots(n: int, k: int, period: float = 2 * jnp.pi) -> jnp.ndarray:
     """
     Build a periodic knot vector for n control points, degree k,
-    on the domain [0, 2*pi).
-    This is different than _periodic_knots, which builds a knot vector for periodic interpolation of given data points. 
+    on the domain [0, period).
+    This is different than _periodic_knots, which builds a knot vector for periodic interpolation of given data points.
     This function is for building a knot vector for periodic B-spline parametrization.
 
-    
+
     Parameters
     ----------
     n : int
         Number of control points.
     k : int
         Degree of the B-spline.
-    
+    period : float, optional
+        Period of the B-spline. Default is 2*pi.
+
     Returns
-    ------- 
+    -------
     jnp.ndarray [n + 2*k + 1]
         Knot vector for periodic B-spline interpolation.
-    """    
-    base = jnp.linspace(0, 2 * jnp.pi, n + 1)  # n+1 pts, spacing = 2pi/n
-    # prepend k knots by wrapping backward
-    left  = base[-k-1:-1] - 2 * jnp.pi   # k knots < 0
-    # append k knots by wrapping forward  
-    right = base[1:k+1]   + 2 * jnp.pi   # k knots > 2pi    
+    """
+    base = jnp.linspace(0, period, n + 1)
+    left  = base[-k-1:-1] - period
+    right = base[1:k+1]   + period
     return jnp.concatenate([left, base, right])
 
 def make_periodic_coeffs(c: jnp.ndarray, k: int) -> jnp.ndarray:
@@ -277,13 +277,13 @@ def make_periodic_coeffs(c: jnp.ndarray, k: int) -> jnp.ndarray:
     return jnp.concatenate([c, c[:k]])
 
 @eqx.filter_jit
-def periodic_bspline(theta: jnp.ndarray, c: jnp.ndarray, k: int, derivative: int = 0):
+def periodic_bspline(theta: jnp.ndarray, c: jnp.ndarray, k: int, period: float = 2 * jnp.pi, derivative: int = 0):
     """
     Function to evaluate a periodic B-spline at angles theta given coefficients c and degree k.
 
     Note that the coefficients c are the free parameters, which do not map directly to a control point
     given by their index. Use :func`greville_abscissa_periodic_bspline` to compute the control points location.
-    
+
     Parameters
     ----------
     theta : jnp.ndarray [M]
@@ -292,6 +292,8 @@ def periodic_bspline(theta: jnp.ndarray, c: jnp.ndarray, k: int, derivative: int
         Coefficients of the B-spline basis functions. Must have length n, which is the number of free parameters. Internally extended to n+k for periodicity.
     k : int
         Degree of the B-spline.
+    period : float, optional
+        Period of the B-spline. Default is 2*pi.
     derivative : int, optional
         Order of the derivative to compute. Default is 0 (the function itself).
 
@@ -299,17 +301,79 @@ def periodic_bspline(theta: jnp.ndarray, c: jnp.ndarray, k: int, derivative: int
     -------
     jnp.ndarray [M]
         Values of the periodic B-spline (or its derivative) at the angles theta.
-    
+
     """
     n = c.shape[0]
-    t = make_periodic_knots(n, k)        # [n + 2k + 1]
-    c_ext = make_periodic_coeffs(c, k)   # [n + k] (= (n+2k+1) - k - 1  required for bspline)
-    theta_wrapped = jnp.mod(theta, 2 * jnp.pi)
-    return bspline(theta_wrapped, t, c_ext, k, derivative)
+    t = make_periodic_knots(n, k, period)
+    c_ext = make_periodic_coeffs(c, k)
+    return bspline(jnp.mod(theta, period), t, c_ext, k, derivative)
 
 @eqx.filter_jit
-def greville_abscissa_periodic_bspline(n : int, k: int) -> jnp.ndarray: 
-    
-    t = make_periodic_knots(n, k)        # [n + 2k + 1]
-    theta_ctrl = jnp.array([jnp.mean(t[i:i+k+2]) for i in range(n)])  # [n]
-    return jnp.mod(theta_ctrl, 2 * jnp.pi)
+def greville_abscissa_periodic_bspline(n: int, k: int, period: float = 2 * jnp.pi) -> jnp.ndarray:
+    t = make_periodic_knots(n, k, period)
+    theta_ctrl = jnp.array([jnp.mean(t[i:i+k+2]) for i in range(n)])
+    return jnp.mod(theta_ctrl, period)
+
+@eqx.filter_jit
+def periodic_bspline_2d(theta, phi, c: jnp.ndarray, k_theta: int, k_phi: int,
+                        period_theta: float = 2 * jnp.pi, period_phi: float = 2 * jnp.pi):
+    """
+    Evaluate a 2D tensor-product periodic B-spline at a single point (theta, phi).
+
+    Parameters
+    ----------
+    theta : scalar
+        Poloidal angle, in radians.
+    phi : scalar
+        Toroidal angle, in radians.
+    c : jnp.ndarray [n_theta, n_phi]
+        Coefficient matrix.
+    k_theta : int
+        Degree in the theta direction.
+    k_phi : int
+        Degree in the phi direction.
+    period_theta : float, optional
+        Period in the theta direction. Default is 2*pi.
+    period_phi : float, optional
+        Period in the phi direction. Default is 2*pi.
+
+    Returns
+    -------
+    scalar
+        Value of the spline at (theta, phi).
+    """
+    h = jax.vmap(lambda c_row: periodic_bspline(phi, c_row, k_phi, period_phi))(c)
+    return periodic_bspline(theta, h, k_theta, period_theta)
+
+@eqx.filter_jit
+def periodic_bspline_2d_vec(theta, phi, c: jnp.ndarray, k_theta: int, k_phi: int,
+                            period_theta: float = 2 * jnp.pi, period_phi: float = 2 * jnp.pi):
+    """
+    Vectorized version of periodic_bspline_2d for evaluating at multiple (theta, phi) points.
+
+    Just uses jnp.vectorize under the hood; this function wraps over it to ensure the correct number of arguments 
+    are always passed.
+
+    Parameters
+    ----------
+    theta : jnp.ndarray [...]
+        Poloidal angles, in radians.
+    phi : jnp.ndarray [...]
+        Toroidal angles, in radians.
+    c : jnp.ndarray [n_theta, n_phi]
+        Coefficient matrix.
+    k_theta : int
+        Degree in the theta direction.
+    k_phi : int
+        Degree in the phi direction.
+    period_theta : float, optional
+        Period in the theta direction. Default is 2*pi.
+    period_phi : float, optional
+        Period in the phi direction. Default is 2*pi.
+
+    Returns
+    -------
+    jnp.ndarray [...]
+        Values of the spline at each (theta[i], phi[j]).
+    """
+    return jnp.vectorize(periodic_bspline_2d, signature='(),()->()', excluded=(2,3,4,5,6))(theta, phi, c , k_theta, k_phi, period_theta, period_phi)
