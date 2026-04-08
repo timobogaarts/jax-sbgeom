@@ -166,16 +166,23 @@ class LayeredDiscreteBlanket(eqx.Module):
     @abstractmethod
     def s_spacing(self):
         '''
-        The s spacing for the layered discrete blanket used for meshing the discrete layers.
+        The s spacing for the layered discrete blanket used for meshing the discrete layers. This is a radial array.
+        '''
+        ...
+
+    
+    @property
+    @abstractmethod
+    def flux_surface_coordinates_volume_mesh(self):
+        '''
+        Returns the flux surface coordinates of the vertices of the volume mesh. This is useful for mapping functions defined on the flux surface to the volume mesh (e.g. plasma profiles).
         '''
         ...
 
     
     def map_to_physical_spacing(self, d_layers : jnp.ndarray):
         '''
-        Maps the s_spacing property to physical spacing.
-        Takes a 1D array of the same size of the number of physical layers.
-
+        Maps the s_spacing property to physical spacing, given an 1D array of the same size as the number of physical layers.
         The result has the meaning of a normal radial coordinate until s = 1.0, beyond is the distance from the lcfs. In other words,
         1.2 means a distance of 0.2 from the LCFS.
 
@@ -216,7 +223,7 @@ class LayeredDiscreteBlanketPlasmaTransformed(LayeredDiscreteBlanketTransformed)
     The number of elements in the first external layer is resolution_layers[1], and so on.
 
     '''
-    s_power_sampling : int = 2
+    s_power_sampling : float = 2.0
 
     def volume_mesh(self, parametrised_surface : ParametrisedSurface):
         return mesh_tetrahedral_blanket_transformed_axis(parametrised_surface, self, self.s_power_sampling)
@@ -233,6 +240,15 @@ class LayeredDiscreteBlanketPlasmaTransformed(LayeredDiscreteBlanketTransformed)
     def _map_to_physical_spacing(self, d_layers : jnp.ndarray):        
         assert d_layers.shape == (self.n_physical_layers,), f"Input array has shape {d_layers.shape}, but expected shape is {(self.n_physical_layers,)}"
         return compute_d_spacing_transformed_axis(self, d_layers, self.s_power_sampling)
+    
+    @property    
+    def flux_surface_coordinates_volume_mesh(self):
+        '''
+        Returns the flux surface coordinates of the vertices of the volume mesh. This is useful for mapping functions defined on the flux surface to the volume mesh (e.g. plasma profiles).
+        '''
+        from jax_sbgeom.flux_surfaces.flux_surface_meshing import _mesh_tetrahedra_points_coordinates
+        return _mesh_tetrahedra_points_coordinates(self.s_spacing, True, self.toroidal_extent.start, self.toroidal_extent.end, self.toroidal_extent.full_angle(), self.n_theta, self.n_phi)
+
 
         
     

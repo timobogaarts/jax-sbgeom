@@ -891,25 +891,25 @@ def _mesh_tetrahedra_connectivity(n_layers : int, include_axis : bool, full_angl
 @partial(jax.jit, static_argnums=(2,5,6,7))
 def _mesh_tetrahedra_points(flux_surfaces : ParametrisedSurface, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
 
-    assert s_layers.shape[0] >= 2, "At least two layers are required to create a tetrahedral mesh. Only {} were provided.".format(s_layers.shape[0])
-        
-    theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
-    phi   = jax.lax.cond(full_angle,    lambda _ : jnp.linspace(phi_start, phi_end, n_phi, endpoint=False),
-                                        lambda _ :jnp.linspace(phi_start, phi_end, n_phi, endpoint=True),
-                                        operand = None)
-    if include_axis:
-        axis_points = flux_surfaces.cartesian_position(0.0, 0.0, phi).reshape(-1,3) # shape (n_phi, 3)        
-        s_mg_layers, theta_mg_layers, phi_mg_layers = jnp.meshgrid(s_layers[1:], theta, phi, indexing='ij')
-        surface_points = flux_surfaces.cartesian_position(s_mg_layers, theta_mg_layers, phi_mg_layers).reshape(-1,3)
+    s_coords, theta_coords, phi_coords = _mesh_tetrahedra_points_coordinates(s_layers, include_axis, phi_start, phi_end, full_angle, n_theta, n_phi) # shape (n_points,)
 
-        return jnp.concatenate([axis_points, surface_points], axis=0)
-    else:
-        s_mg_layers, theta_mg_layers, phi_mg_layers = jnp.meshgrid(s_layers, theta, phi, indexing='ij')
-        surface_points = flux_surfaces.cartesian_position(s_mg_layers, theta_mg_layers, phi_mg_layers).reshape(-1,3)
-        return surface_points
+    return flux_surfaces.cartesian_position(s_coords, theta_coords, phi_coords)
 
-def _mesh_tetrahedra_points_coordinates(flux_surface : ParametrisedSurface, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+@eqx.filter_jit
+def _mesh_tetrahedra_points_coordinates(s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):
+    '''
+    Internal function that returns the flux surface coordinates of the point in the tetrahedral mesh obtained by the same arguments as _mesh_tetrahedra.
 
+    Returns
+    -------
+    s_coords : jnp.ndarray
+        The radial coordinates of the points in the mesh. Shape (n_points,)
+    theta_coords : jnp.ndarray
+        The poloidal angle coordinates of the points in the mesh. Shape (n_points,)
+    phi_coords : jnp.ndarray
+        The toroidal angle coordinates of the points in the mesh. Shape (n_points,)
+    ''' 
+    
     assert s_layers.shape[0] >= 2, "At least two layers are required to create a tetrahedral mesh. Only {} were provided.".format(s_layers.shape[0])
         
     theta = jnp.linspace(0, 2 * jnp.pi, n_theta, endpoint=False)
@@ -923,7 +923,7 @@ def _mesh_tetrahedra_points_coordinates(flux_surface : ParametrisedSurface, s_la
     else:
         s_mg_layers, theta_mg_layers, phi_mg_layers = jnp.meshgrid(s_layers, theta, phi, indexing='ij')
         
-        return s_mg_layers, theta_mg_layers, phi_mg_layers
+        return s_mg_layers.ravel(), theta_mg_layers.ravel(), phi_mg_layers.ravel()
 
 @partial(jax.jit, static_argnums=(2, 5, 6, 7))
 def _mesh_tetrahedra(flux_surfaces : ParametrisedSurface, s_layers, include_axis : bool,  phi_start : float, phi_end : float, full_angle : bool, n_theta : int, n_phi : int):

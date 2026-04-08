@@ -512,9 +512,8 @@ def make_2d_flux_surface(fs : FluxSurfaceBase) -> FluxSurfaceBase:
                 settings = fs.settings)
     
     
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class ToroidalExtent:
+
+class ToroidalExtent(eqx.Module):
     '''
     Class representing a toroidal extent in phi.
 
@@ -529,7 +528,7 @@ class ToroidalExtent:
     end   : float
 
     @classmethod
-    def half_module(self, flux_surface : FluxSurfaceBase, dphi = 0.0):
+    def half_module(cls, flux_surface : FluxSurfaceBase, dphi = 0.0):
         '''
         Create a ToroidalExtent representing half a field period.
 
@@ -544,10 +543,10 @@ class ToroidalExtent:
         ToroidalExtent
             The created ToroidalExtent.
         '''
-        return self(dphi, 2 * jnp.pi / flux_surface.nfp / 2.0 + dphi)
+        return cls(dphi, 2 * jnp.pi / flux_surface.nfp / 2.0 + dphi)
     
     @classmethod
-    def full_module(self, flux_surface : FluxSurfaceBase, dphi = 0.0):
+    def full_module(cls, flux_surface : FluxSurfaceBase, dphi = 0.0):
         '''
         Create a ToroidalExtent representing a full field period.
 
@@ -562,10 +561,10 @@ class ToroidalExtent:
         ToroidalExtent
             The created ToroidalExtent.
         '''
-        return self(dphi, 2 * jnp.pi / flux_surface.nfp + dphi)
+        return cls(dphi, 2 * jnp.pi / flux_surface.nfp + dphi)
     
     @classmethod 
-    def full(self):
+    def full(cls):
         '''
         Create a ToroidalExtent representing the full toroidal angle [0, 2pi].
 
@@ -574,7 +573,7 @@ class ToroidalExtent:
         ToroidalExtent
             The created ToroidalExtent.
         '''
-        return self(0.0, 2 * jnp.pi)
+        return cls(0.0, 2 * jnp.pi)
 
     def full_angle(self):
         '''
@@ -590,7 +589,43 @@ class ToroidalExtent:
     def __iter__(self):
         return iter((self.start, self.end, self.full_angle()))
     
+class ToroidalExtentStatic(ToroidalExtent):
+    '''
+    Class extending a ToroidalExtent by having a static flag indicating whether it is a full angle.
+
+    For normal ToroidalExtent, the full angle is determined by checking whether end - start is close to 2pi. This 
+    can lead to issues when using it under jit for meshing; this will lead to different sized arrays depending on runtime values,
+    which is not supported.
+    '''
+        
+    full_angle_bool : bool
+    '''
+    Whether the toroidal extent represents a full 2 pi angle.
+    '''     
+
+    @classmethod
+    def half_module(cls, flux_surface : FluxSurfaceBase, dphi = 0.0):    
+        return cls(dphi, 2 * jnp.pi / flux_surface.nfp / 2.0 + dphi, False)
     
+    @classmethod
+    def full_module(cls, flux_surface : FluxSurfaceBase, dphi = 0.0):        
+        return cls(dphi, 2 * jnp.pi / flux_surface.nfp + dphi, False)
+    
+    @classmethod 
+    def full(cls):
+        '''
+        Create a ToroidalExtent representing the full toroidal angle [0, 2pi].
+
+        Returns
+        --------
+        ToroidalExtent
+            The created ToroidalExtent.
+        '''
+        return cls(0.0, 2 * jnp.pi, True)
+
+    def full_angle(self):
+        return self.full_angle_bool
+
 
 
 # ===================================================================================================================================================================================
