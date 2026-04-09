@@ -17,6 +17,8 @@ class BlanketMeshStructure(eqx.Module):
 
     Has several convenience functions to slice the blanket and functions 
     defined on the blanket.
+
+    These should all be static fields to be able to use it under JIT. Specifically, use a ToroidalExtentStatic if JIT is required.
     '''
 
     n_theta : int
@@ -42,7 +44,10 @@ class BlanketMeshStructure(eqx.Module):
 
     @property 
     def n_phi_blocks(self):
-        return jnp.where(self.full_angle, self.n_phi, self.n_phi - 1)
+        if self.full_angle:
+            return self.n_phi
+        else:
+            return self.n_phi - 1        
     @property 
     def n_theta_blocks(self):
         return self.n_theta     
@@ -59,13 +64,15 @@ class BlanketMeshStructure(eqx.Module):
         return jnp.where(jnp.logical_and(layer_i_mod == 0, self.include_axis), 3, 6 )
     
     def n_blocks_in_layer(self, layer_i : int):
-        layer_i_mod = self._norm_negative(layer_i)
+        layer_i_mod = self._norm_negative(layer_i)        
         return jnp.where(jnp.logical_and(layer_i_mod == 0, self.include_axis), 3 * self.n_theta_blocks * self.n_phi_blocks, 6 * self.n_theta_blocks * self.n_phi_blocks)                    
     
     def layer_start(self, layer_i : int):
         layer_i_mod = self._norm_negative(layer_i)
-        
-        return jnp.where(self.include_axis, 3 * self.n_theta_blocks * self.n_phi_blocks * (layer_i_mod > 0) + 6 * self.n_theta_blocks * self.n_phi_blocks * (layer_i_mod - 1) * (layer_i_mod > 0), 0)
+        if self.include_axis:
+            return 3 * self.n_theta_blocks * self.n_phi_blocks * (layer_i_mod > 0) + 6 * self.n_theta_blocks * self.n_phi_blocks * (layer_i_mod - 1) * (layer_i_mod > 0)
+        else:
+            return  6 * self.n_theta_blocks * self.n_phi_blocks * layer_i_mod
     
     def layer_slice(self, layer_i : int):    
         return slice(self.layer_start(layer_i), self.layer_start(layer_i) + self.n_blocks_in_layer(layer_i))
@@ -84,22 +91,35 @@ class BlanketMeshStructure(eqx.Module):
         Discards the first layer if an axis is present and then reshapes the last.        
         '''  
         if self.include_axis:
-            return arr[self.layer_start(1):].reshape(self.n_layered_blocks - 1, self.n_phi_blocks, self.n_theta_blocks, 6)      
+            return jax.lax.dynamic_slice(arr, start_indices = (self.layer_start(1),),slice_sizes = (self.n_elements - 3 * self.n_theta_blocks * self.n_phi_blocks)).reshape(self.n_layered_blocks - 1, self.n_phi_blocks, self.n_theta_blocks, 6)      
         else:
             return arr.reshape(self.n_layered_blocks, self.n_phi_blocks, self.n_theta_blocks, 6)        
     
     def map_radial_array_to_layers(self, arr : jnp.ndarray):
         '''
-        Maps a flat array of shape (..., n_s) to the shape of the layers in the blanket, which is (n_layered_blocks,).
+        Maps a flat array of shape (..., n_layered_blocks) to the shape of the layers in the blanket, which is (..., n_elements).
         This is useful for mapping a radial function defined on the layers to the blocks in the blanket (e.g. materials)
+
+        Parameters
+        ----------
+        arr : jnp.ndarray
+            The input array to map. Must have shape (..., n_layered_blocks), where n_layered_blocks is the number of layers in the blanket mesh. The last axis is the one that is mapped to the layers in the blanket.
+        Returns
+        -------
+        jnp.ndarray
+            The output array with shape (..., n_elements), where n_elements is the total number of elements in the blanket mesh. The last axis is the one that is mapped to the layers in the blanket.
         '''
         assert arr.shape[-1] == self.n_layered_blocks, f"Input array has last axis shape {arr.shape[-1]}, but expected shape is {self.n_layered_blocks}"
 
-        return jnp.repeat(arr, self.n_blocks_in_layer(jnp.arange(self.n_layered_blocks)), axis=-1)
+        return jnp.repeat(arr, self.n_blocks_in_layer(jnp.arange(self.n_layered_blocks)), axis=-1, total_repeat_length=self.n_elements)
     
     @property 
     def n_elements(self):        
-        return jnp.where(self.include_axis, 6 * self.n_theta_blocks * self.n_phi_blocks * (self.n_s - 2) + 3 * self.n_theta_blocks * self.n_phi_blocks, 6 * self.n_theta_blocks * self.n_phi_blocks * (self.n_s - 1))
+        if self.include_axis:
+            return 6 * self.n_theta_blocks * self.n_phi_blocks * (self.n_s - 2) + 3 * self.n_theta_blocks * self.n_phi_blocks
+        else:
+            return 6 * self.n_theta_blocks * self.n_phi_blocks * (self.n_s - 1)
+        #return jnp.where(self.include_axis, 6 * self.n_theta_blocks * self.n_phi_blocks * (self.n_s - 2) + 3 * self.n_theta_blocks * self.n_phi_blocks, 6 * self.n_theta_blocks * self.n_phi_blocks * (self.n_s - 1))
     
     @property 
     def n_points(self):
@@ -135,7 +155,7 @@ class LayeredDiscreteBlanket(eqx.Module):
     
     @property 
     def n_discrete_layers(self):
-        return jnp.sum(jnp.array(self.resolution_layers))
+        return sum(self.resolution_layers)    
     
     @property 
     def n_physical_layers(self):
@@ -159,8 +179,8 @@ class LayeredDiscreteBlanket(eqx.Module):
         '''
         Maps a flat array of shape (n_elements,) to the shape of the layers in the blanket, which is (n_layered_blocks,).
         This is useful for mapping a radial function defined on the layers to the blocks in the blanket (e.g. materials)
-        '''
-        return self.volume_mesh_structure.map_radial_array_to_layers(jnp.repeat(jnp.arange(self.n_physical_layers), jnp.array(self.resolution_layers)))
+        '''        
+        return self.volume_mesh_structure.map_radial_array_to_layers(jnp.repeat(jnp.arange(self.n_physical_layers), jnp.array(self.resolution_layers), total_repeat_length=self.n_discrete_layers))
     
     @property
     @abstractmethod
