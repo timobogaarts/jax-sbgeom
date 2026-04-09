@@ -764,6 +764,7 @@ def _cylindrical_position_interpolated(flux_surface : FluxSurfaceBase,  s,  thet
     # Now, no n_modes x n_points arrays are created.
 
     # This function is valid for both s,theta,phi all scalars and broadcastable arrays. 
+    @jax.checkpoint 
     def fourier_sum(vals, i):
         R, Z = vals
         R = R + interpolate_array(flux_surface.data.Rmnc[..., i], s) * jnp.cos(flux_surface.modes.mpol_vector[i] * theta - flux_surface.modes.ntor_vector[i] * phi)
