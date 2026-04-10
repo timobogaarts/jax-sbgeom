@@ -64,7 +64,8 @@ See the API reference for details on the meshing functions: :mod:`jax_sbgeom.flu
 
 
 Converting between representations
---------------------------------------
+-----------------
+Input magnetic field equilibria should be in nc4 format. To obtain an nc4 file from the standard VMEC.nc file format, run :code:`nccopy -k 4 VMEC.nc vmec_hdf5.nc4` from the command line.
 
 Functions are included in the module :mod:`jax_sbgeom.flux_surfaces.convert_to_vmec` to convert between different representations, or to convert the parametrisation to an equal arclength.
 Furthermore, given some thickness matrix (i.e. for :math:`\phi`, :math:`\theta` a distance to the LCFS), we can fit a flux surface to it.
