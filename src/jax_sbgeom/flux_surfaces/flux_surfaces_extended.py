@@ -174,12 +174,17 @@ class FluxSurfaceExtendedDistanceMatrix(ParametrisedSurface):
 
     @eqx.filter_jit
     def normal(self, s, theta, phi):
-        raise NotImplementedError
+
+        s = jnp.clip(s, max = len(self.d_layers)  + 1 - 1e-6) # to avoid out of bounds access in d_interp
+        grad_pos = _cartesian_position_normal_d_matrix(self, s, theta, phi)
+        return grad_pos / jnp.linalg.norm(grad_pos, axis=-1, keepdims=True) 
     
     @eqx.filter_jit
     def principal_curvatures(self, s, theta, phi):
         raise NotImplementedError
 
+
+_cartesian_position_normal_d_matrix = jnp.vectorize(stack_jacfwd(lambda flux_surface, s, theta, phi : flux_surface.cartesian_position(s, theta, phi), argnums=1), excluded = (0,), signature = "(),(),()->(3)")
 # ===================================================================================================================================================================================
 #                                                                           Normal Extended
 # ===================================================================================================================================================================================
